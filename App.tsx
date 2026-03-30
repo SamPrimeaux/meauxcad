@@ -23,6 +23,7 @@ import { ExcalidrawView } from './components/ExcalidrawView';
 import { DatabaseBrowser } from './components/DatabaseBrowser';
 import { GitHubActionsPanel } from './components/GitHubActionsPanel';
 import { GoogleDriveExplorer } from './components/GoogleDriveExplorer';
+import { PlaywrightConsole } from './components/PlaywrightConsole';
 import { MCPPanel } from './components/MCPPanel';
 import { ProjectType, AppState, GameEntity, GenerationConfig, ArtStyle, SceneConfig, CADTool, CustomAsset, CADPlane } from './types';
 import { Sparkles, Files, Search, GitBranch, PlayCircle, Blocks, Box, Settings, PanelLeftClose, PanelRightClose, Terminal as TermIcon, SplitSquareHorizontal, LayoutTemplate, Network, Layers, Monitor, ChevronDown, Bug, Github, Database, FolderOpen, Globe, PenTool, Cloud, X as XIcon } from 'lucide-react';
@@ -44,7 +45,7 @@ const App: React.FC = () => {
 
   // IDE State
   type TabId = 'welcome' | 'engine' | 'code' | 'browser' | 'glb' | 'excalidraw';
-  const [activeActivity, setActiveActivity] = useState<'cad' | 'files' | 'search' | 'mcps' | 'git' | 'debug' | 'remote' | 'actions' | 'sql' | 'projects' | 'settings' | 'drive' | null>('files');
+  const [activeActivity, setActiveActivity] = useState<'cad' | 'files' | 'search' | 'mcps' | 'git' | 'debug' | 'remote' | 'actions' | 'sql' | 'projects' | 'settings' | 'drive' | 'playwright' | null>('files');
   const [agentPosition, setAgentPosition] = useState<'right' | 'left' | 'off'>('right');
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   // Tabs: only 'welcome' is open by default. Others open on demand and can be closed.
@@ -74,7 +75,7 @@ const App: React.FC = () => {
       { role: 'assistant', content: 'Hi! I\'m your Meaaux Studio Agent. How can I assist with your workspace?' }
   ]);
 
-  const toggleActivity = (activity: 'cad' | 'files' | 'search' | 'mcps' | 'git' | 'debug' | 'remote' | 'actions' | 'sql' | 'projects' | 'settings' | 'drive') => {
+  const toggleActivity = (activity: 'cad' | 'files' | 'search' | 'mcps' | 'git' | 'debug' | 'remote' | 'actions' | 'sql' | 'projects' | 'settings' | 'drive' | 'playwright') => {
       setActiveActivity(prev => prev === activity ? null : activity);
   };
 
@@ -448,6 +449,7 @@ const App: React.FC = () => {
               <ActivityIcon icon={Github} title="GitHub Actions" active={activeActivity === 'actions'} onClick={() => toggleActivity('actions')} />
               <ActivityIcon icon={Database} title="D1 Explorer" active={activeActivity === 'sql'} onClick={() => toggleActivity('sql')} />
               <ActivityIcon icon={Cloud} title="Cloud Sync" active={activeActivity === 'drive'} onClick={() => toggleActivity('drive')} />
+              <ActivityIcon icon={Monitor} title="Playwright Jobs" active={activeActivity === 'playwright'} onClick={() => toggleActivity('playwright')} />
               
               <div className="flex-1" />
               <ActivityIcon icon={FolderOpen} title="Projects" active={activeActivity === 'projects'} onClick={() => toggleActivity('projects')} />
@@ -547,6 +549,8 @@ const App: React.FC = () => {
                       <GitHubActionsPanel onClose={() => setActiveActivity(null)} />
                   ) : activeActivity === 'drive' ? (
                       <GoogleDriveExplorer />
+                  ) : activeActivity === 'playwright' ? (
+                      <PlaywrightConsole />
                   ) : (
                       <div className="p-4 text-xs text-[var(--text-muted)]">Panel empty.</div>
                   )}

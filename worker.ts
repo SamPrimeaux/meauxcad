@@ -326,6 +326,39 @@ export default {
       }
     }
 
+    // ── Playwright Job Management ──────────────────────────────────────────────
+    if (request.method === 'GET' && url.pathname === '/api/playwright/jobs') {
+      try {
+        const { results } = await env.DB.prepare(
+          'SELECT id, job_type, target_url, status, result_url, error, created_at, completed_at, metadata FROM playwright_jobs ORDER BY created_at DESC LIMIT 100'
+        ).all();
+        return new Response(JSON.stringify({ success: true, jobs: results }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (e: any) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/playwright/jobs/launch') {
+      try {
+        const { job_type, target_url, metadata } = await request.json() as { job_type: string; target_url: string; metadata?: any };
+        const id = crypto.randomUUID();
+        const now = new Date().toISOString();
+        
+        await env.DB.prepare(`
+          INSERT INTO playwright_jobs (id, job_type, target_url, status, created_at, metadata)
+          VALUES (?, ?, ?, 'pending', ?, ?)
+        `).bind(id, job_type || 'screenshot', target_url, now, JSON.stringify(metadata || {})).run();
+
+        return new Response(JSON.stringify({ success: true, job_id: id }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (e: any) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+      }
+    }
+
     if (request.method === 'GET' && url.pathname === '/api/theme') {
       try {
         const result = await env.DB.prepare('SELECT config FROM cms_themes WHERE is_system = 1 LIMIT 1').first();
