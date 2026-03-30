@@ -3,8 +3,9 @@ import {
   Search, ExternalLink, Globe, Bot, Database, Box, Code2, Wrench,
   GitBranch, Network, Zap, CheckCircle2, XCircle, AlertCircle,
   ChevronRight, ToggleLeft, ToggleRight, Eye, Settings2, Package,
-  Cloud, BarChart2, BookOpen, Bell, Layers, Cpu, Shield
+  Cloud, BarChart2, BookOpen, Bell, Layers, Cpu, Shield, Palette
 } from 'lucide-react';
+import { ThemeSwitcher } from './ThemeSwitcher';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface MCP {
@@ -121,6 +122,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, onFileSel
     { id: 'GitHub',       icon: <GitBranch size={14} /> },
     { id: 'CI/CD',        icon: <Zap size={14} /> },
     { id: 'Network',      icon: <Network size={14} /> },
+    { id: 'Themes',       icon: <Palette size={14} /> },
     { id: 'Storage',      icon: <Database size={14} /> },
     { id: 'Security',     icon: <Shield size={14} /> },
     { id: 'Notifications',icon: <Bell size={14} /> },
@@ -415,6 +417,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, onFileSel
             </div>
           )}
 
+          {/* ── THEMES ── */}
+          {activeSection === 'Themes' && (
+            <div className="flex flex-col gap-4">
+              <h2 className="text-[13px] font-bold text-[var(--text-heading)] uppercase tracking-widest">Workspace Themes</h2>
+              <p className="text-[12px] text-[var(--text-muted)]">Select a theme to instantly update the workspace aesthetics. Themes are stored in the <code className="font-mono text-[var(--solar-cyan)]">cms_themes</code> table.</p>
+              <ThemeSwitcher />
+            </div>
+          )}
+
           {/* ── STORAGE ── */}
           {activeSection === 'Storage' && (
             <div className="flex flex-col gap-3">
@@ -437,7 +448,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, onFileSel
           )}
 
           {/* ── Other sections — placeholder ── */}
-          {!['General','AI Models','Tools & MCP','GitHub','CI/CD','Network','Storage'].includes(activeSection) && (
+          {!['General','AI Models','Tools & MCP','GitHub','CI/CD','Network','Themes','Storage'].includes(activeSection) && (
             <div className="flex flex-col items-center justify-center h-40 gap-3 text-[var(--text-muted)]">
               <Package size={28} className="opacity-30" />
               <p className="text-[12px]">{activeSection} settings coming soon.</p>

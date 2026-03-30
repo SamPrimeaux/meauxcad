@@ -162,7 +162,7 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
 
     return (
       <div
-        className="flex flex-col border-t border-[var(--border-subtle)] bg-[var(--bg-app)] z-50 select-none"
+        className="flex flex-col border-t border-[var(--border-subtle)] bg-[var(--bg-app)] z-50 select-none animate-slide-up origin-bottom"
         style={{ height: isCollapsed ? 36 : height, flexShrink: 0 }}
       >
         {/* ── Drag Handle Strip ── */}

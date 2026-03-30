@@ -56,5 +56,21 @@
     {
       "service": "inneranimalmedia-tail"
     }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "MCAD_SESSION",
+        "class_name": "MeauxCADSession"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": [
+        "MeauxCADSession"
+      ]
+    }
   ]
 }

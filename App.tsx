@@ -19,8 +19,13 @@ import { GLBViewer } from './components/GLBViewer';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ToolLauncherBar } from './components/ToolLauncherBar';
 import { StatusBar } from './components/StatusBar';
+import { ExcalidrawView } from './components/ExcalidrawView';
+import { DatabaseBrowser } from './components/DatabaseBrowser';
+import { GitHubActionsPanel } from './components/GitHubActionsPanel';
+import { GoogleDriveExplorer } from './components/GoogleDriveExplorer';
+import { MCPPanel } from './components/MCPPanel';
 import { ProjectType, AppState, GameEntity, GenerationConfig, ArtStyle, SceneConfig, CADTool, CustomAsset, CADPlane } from './types';
-import { Sparkles, Files, Search, GitBranch, PlayCircle, Blocks, Box, Settings, PanelLeftClose, PanelRightClose, Terminal as TermIcon, SplitSquareHorizontal, LayoutTemplate, Network, Layers, Monitor, ChevronDown, Bug, Github, Database, FolderOpen, Globe } from 'lucide-react';
+import { Sparkles, Files, Search, GitBranch, PlayCircle, Blocks, Box, Settings, PanelLeftClose, PanelRightClose, Terminal as TermIcon, SplitSquareHorizontal, LayoutTemplate, Network, Layers, Monitor, ChevronDown, Bug, Github, Database, FolderOpen, Globe, PenTool, Cloud, X as XIcon } from 'lucide-react';
 
 const App: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -38,12 +43,29 @@ const App: React.FC = () => {
   const [redoStack, setRedoStack] = useState<GameEntity[]>([]);
 
   // IDE State
-  const [activeActivity, setActiveActivity] = useState<'cad' | 'files' | 'search' | 'mcps' | 'git' | 'debug' | 'remote' | 'actions' | 'sql' | 'projects' | 'settings' | null>('files');
+  type TabId = 'welcome' | 'engine' | 'code' | 'browser' | 'glb' | 'excalidraw';
+  const [activeActivity, setActiveActivity] = useState<'cad' | 'files' | 'search' | 'mcps' | 'git' | 'debug' | 'remote' | 'actions' | 'sql' | 'projects' | 'settings' | 'drive' | null>('files');
   const [agentPosition, setAgentPosition] = useState<'right' | 'left' | 'off'>('right');
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'welcome' | 'engine' | 'code' | 'browser' | 'glb'>('welcome');
+  // Tabs: only 'welcome' is open by default. Others open on demand and can be closed.
+  const [openTabs, setOpenTabs] = useState<TabId[]>(['welcome']);
+  const [activeTab, setActiveTab] = useState<TabId>('welcome');
   const [activeFile, setActiveFile] = useState<{name: string, content: string, handle?: any, originalContent?: string} | null>(null);
   const [browserUrl, setBrowserUrl] = useState<string | undefined>(undefined);
+
+  const openTab = (tab: TabId) => {
+    setOpenTabs(prev => prev.includes(tab) ? prev : [...prev, tab]);
+    setActiveTab(tab);
+  };
+
+  const closeTab = (tab: TabId, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = openTabs.filter(t => t !== tab);
+    setOpenTabs(next);
+    if (activeTab === tab) {
+      setActiveTab(next.length > 0 ? next[next.length - 1] : 'welcome');
+    }
+  };
 
   // Dynamic Layout & Lifted State
   const [leftWidth, setLeftWidth] = useState(288);
@@ -52,7 +74,7 @@ const App: React.FC = () => {
       { role: 'assistant', content: 'Hi! I\'m your Meaaux Studio Agent. How can I assist with your workspace?' }
   ]);
 
-  const toggleActivity = (activity: 'cad' | 'files' | 'search' | 'mcps' | 'git' | 'debug' | 'remote' | 'actions' | 'sql' | 'projects' | 'settings') => {
+  const toggleActivity = (activity: 'cad' | 'files' | 'search' | 'mcps' | 'git' | 'debug' | 'remote' | 'actions' | 'sql' | 'projects' | 'settings' | 'drive') => {
       setActiveActivity(prev => prev === activity ? null : activity);
   };
 
@@ -91,16 +113,25 @@ const App: React.FC = () => {
 
   // Dynamic CMS Theme Fetcher
   useEffect(() => {
-    fetch('/api/theme')
+    const cached = localStorage.getItem('mcad_theme_css');
+    if (cached) {
+      try {
+        const vars = JSON.parse(cached);
+        Object.entries(vars).forEach(([k, v]) => {
+          document.documentElement.style.setProperty(k, String(v));
+        });
+      } catch(e) {}
+    }
+
+    fetch('/api/themes/active?workspace=meauxcad')
       .then(res => res.json())
       .then(data => {
-        if (data.config && typeof data.config === 'string') {
-          try {
-             const vars = JSON.parse(data.config);
-             Object.entries(vars).forEach(([k, v]) => {
-                document.documentElement.style.setProperty(k, String(v));
-             });
-          } catch(e) {}
+        if (data.success && data.data) {
+          const vars = data.data;
+          Object.entries(vars).forEach(([k, v]) => {
+            document.documentElement.style.setProperty(k, String(v));
+          });
+          localStorage.setItem('mcad_theme_css', JSON.stringify(vars));
         }
       })
       .catch(console.error);
@@ -212,7 +243,7 @@ const App: React.FC = () => {
     setUndoStack([]);
     setRedoStack([]);
     // Auto-surface the engine canvas when a 3D project is picked
-    setActiveTab('engine');
+    openTab('engine');
     setActiveActivity('cad');
   };
 
@@ -408,14 +439,15 @@ const App: React.FC = () => {
       <div className="flex flex-1 overflow-hidden">
           {/* 2. ACTIVITY BAR (Extreme Left) */}
           <div className="w-12 bg-[var(--bg-panel)] flex flex-col items-center py-4 gap-4 border-r border-[var(--border-subtle)] shrink-0 z-50">
-              <ActivityIcon icon={Files} title="Explorer" active={activeActivity === 'files'} onClick={() => toggleActivity('files')} />
+              <ActivityIcon icon={PenTool} title="Draw" active={openTabs.includes('excalidraw')} onClick={() => openTab('excalidraw')} />
               <ActivityIcon icon={Search} title="Search" active={activeActivity === 'search'} onClick={() => toggleActivity('search')} />
               <ActivityIcon icon={GitBranch} title="Source Control" active={activeActivity === 'git'} onClick={() => toggleActivity('git')} />
               <ActivityIcon icon={Bug} title="Run & Debug" active={activeActivity === 'debug'} onClick={() => toggleActivity('debug')} />
               <ActivityIcon icon={Network} title="Remote Explorers" active={activeActivity === 'remote'} onClick={() => toggleActivity('remote')} />
               <ActivityIcon icon={Layers} title="Tools & MCP" active={activeActivity === 'mcps'} onClick={() => toggleActivity('mcps')} />
               <ActivityIcon icon={Github} title="GitHub Actions" active={activeActivity === 'actions'} onClick={() => toggleActivity('actions')} />
-              <ActivityIcon icon={Database} title="SQLTools" active={activeActivity === 'sql'} onClick={() => toggleActivity('sql')} />
+              <ActivityIcon icon={Database} title="D1 Explorer" active={activeActivity === 'sql'} onClick={() => toggleActivity('sql')} />
+              <ActivityIcon icon={Cloud} title="Cloud Sync" active={activeActivity === 'drive'} onClick={() => toggleActivity('drive')} />
               
               <div className="flex-1" />
               <ActivityIcon icon={FolderOpen} title="Projects" active={activeActivity === 'projects'} onClick={() => toggleActivity('projects')} />
@@ -426,7 +458,7 @@ const App: React.FC = () => {
           {/* Optional Left Agent Panel */}
           {agentPosition === 'left' && (
               <div 
-                  className="bg-[var(--bg-panel)] flex flex-col shrink-0 transition-opacity relative group z-30 opacity-100"
+                  className="bg-[var(--bg-panel)] flex flex-col shrink-0 transition-opacity relative group z-30 opacity-100 glass-panel"
                   style={{ width: rightWidth, borderRight: '1px solid var(--border-subtle)' }}
               >
                   <div className="h-10 border-b border-[var(--border-subtle)] flex items-center px-4 font-semibold text-[11px] tracking-widest uppercase text-[var(--text-muted)] shrink-0">Agent</div>
@@ -438,14 +470,14 @@ const App: React.FC = () => {
                       setMessages={setChatMessages} 
                       onFileSelect={(file) => {
                           setActiveFile({ ...file, originalContent: '' });
-                          setActiveTab('code');
+                          openTab('code');
                       }}
                       onRunInTerminal={runInTerminal}
                   />
 
                   {/* Resizer Handle */}
                   <div 
-                      className="absolute -right-1 top-0 bottom-0 w-2 cursor-col-resize z-50 hover:bg-[var(--solar-cyan)]/50 transition-colors"
+                      className="absolute -right-1 top-0 bottom-0 w-2 cursor-col-resize z-50 hover:bg-[var(--solar-cyan)]/50 transition-colors glow-border"
                       onMouseDown={(e) => {
                           e.preventDefault();
                           const startX = e.clientX;
@@ -461,13 +493,13 @@ const App: React.FC = () => {
           {/* 3. PRIMARY SIDEBAR (Mobile Responsive & Collapsible) */}
           <div 
               className={`transition-all duration-75 shrink-0 bg-[var(--bg-panel)] flex flex-col z-40 overflow-hidden shadow-2xl md:shadow-none hover:border-[var(--solar-cyan)] relative group
-              ${activeActivity ? 'absolute inset-y-0 left-12 md:relative md:left-0 border-r border-[var(--border-subtle)] opacity-100' : 'border-none opacity-0'}`}
+              ${activeActivity ? 'absolute inset-y-0 left-12 md:relative md:left-0 border-r border-[var(--border-subtle)] opacity-100' : 'border-none opacity-0'} glass-panel`}
               style={{ width: activeActivity ? (window.innerWidth < 768 ? 'calc(100% - 3rem)' : leftWidth) : 0 }}
           >
               <div className="w-full h-full flex flex-col relative">
                   {/* Resizer Handle */}
                   <div 
-                      className="absolute -right-1 top-0 bottom-0 w-2 cursor-col-resize z-50 hover:bg-[var(--solar-cyan)]/50 transition-colors hidden md:block"
+                      className="absolute -right-1 top-0 bottom-0 w-2 cursor-col-resize z-50 hover:bg-[var(--solar-cyan)]/50 transition-colors hidden md:block glow-border"
                       onMouseDown={(e) => {
                           e.preventDefault();
                           const startX = e.clientX;
@@ -497,22 +529,24 @@ const App: React.FC = () => {
                       <LocalExplorer onFileSelect={(file) => {
                           // Snapshot content at open time as the diff baseline
                           setActiveFile({ ...file, originalContent: file.content });
-                          setActiveTab('code');
+                          openTab('code');
                       }}/>
                   ) : activeActivity === 'mcps' ? (
-                      <ExtensionsPanel onToolSelect={(tool: any) => {
-                          const content = tool.schema || JSON.stringify(tool, null, 2);
-                          setActiveFile({ name: tool.mcp_name + '.json', content, originalContent: content });
-                          setActiveTab('code');
-                      }} />
+                      <MCPPanel />
                   ) : activeActivity === 'settings' ? (
                       <SettingsPanel
                           onClose={() => setActiveActivity(null)}
                           onFileSelect={(file) => {
                               setActiveFile({ ...file, originalContent: file.content });
-                              setActiveTab('code');
+                              openTab('code');
                           }}
                       />
+                  ) : activeActivity === 'sql' ? (
+                      <DatabaseBrowser onClose={() => setActiveActivity(null)} />
+                  ) : activeActivity === 'actions' ? (
+                      <GitHubActionsPanel onClose={() => setActiveActivity(null)} />
+                  ) : activeActivity === 'drive' ? (
+                      <GoogleDriveExplorer />
                   ) : (
                       <div className="p-4 text-xs text-[var(--text-muted)]">Panel empty.</div>
                   )}
@@ -521,39 +555,76 @@ const App: React.FC = () => {
 
           {/* 4. MAIN EDITOR AREA */}
           <div className="flex-1 flex flex-col min-w-0 bg-[var(--bg-app)] relative">
-              {/* Editor Tabs */}
-              <div className="h-10 flex items-center shrink-0 pl-0 relative z-10">
-                  <Tab 
-                      title="Welcome" 
-                      icon={<Sparkles size={14} className="text-[var(--solar-cyan)]"/>} 
-                      active={activeTab === 'welcome'} 
-                      onClick={() => setActiveTab('welcome')} 
-                  />
-                  <Tab 
-                      title={activeFile ? `${activeFile.name}${isDirty ? ' ●' : ''}` : 'Untitled.ts'} 
-                      icon={<LayoutTemplate size={14} className={activeFile ? 'text-[var(--solar-yellow)]' : 'text-[var(--text-muted)]'}/>} 
-                      active={activeTab === 'code'} 
-                      onClick={() => setActiveTab('code')} 
-                  />
-                  <Tab 
-                      title="Voxel Preview (Live)" 
-                      icon={<Box size={14} className="text-[var(--solar-magenta)]"/>} 
-                      active={activeTab === 'engine'} 
-                      onClick={() => setActiveTab('engine')} 
-                  />
-                  <Tab 
-                      title="Browser Preview" 
-                      icon={<Globe size={14} className="text-[var(--solar-blue)]"/>} 
-                      active={activeTab === 'browser'} 
-                      onClick={() => setActiveTab('browser')} 
-                  />
-                  <Tab 
-                      title="GLB Viewport" 
-                      icon={<Box size={14} className="text-[var(--solar-green)]"/>} 
-                      active={activeTab === 'glb'} 
-                      onClick={() => setActiveTab('glb')} 
-                  />
-                  
+              {/* Editor Tabs — lazy, closeable */}
+              <div className="h-10 flex items-center shrink-0 pl-0 relative z-10 overflow-x-auto overflow-y-hidden no-scrollbar">
+                  {openTabs.includes('welcome') && (
+                      <Tab
+                          title="Welcome"
+                          icon={<Sparkles size={13} className="text-[var(--solar-cyan)]"/>}
+                          active={activeTab === 'welcome'}
+                          onClick={() => setActiveTab('welcome')}
+                          onClose={(e) => closeTab('welcome', e)}
+                      />
+                  )}
+                  {openTabs.includes('code') && (
+                      <Tab
+                          title={
+                              <span className="flex items-center gap-1">
+                                  {activeFile ? activeFile.name : 'Untitled.ts'}
+                                  {isDirty && <span className="text-[var(--solar-yellow)] text-[10px] animate-pulse-dirty" title="Unsaved changes">●</span>}
+                              </span>
+                          }
+                          icon={<LayoutTemplate size={13} className={activeFile ? 'text-[var(--solar-yellow)]' : 'text-[var(--text-muted)]'}/>}
+                          active={activeTab === 'code'}
+                          onClick={() => setActiveTab('code')}
+                          onClose={(e) => closeTab('code', e)}
+                      />
+                  )}
+                  {openTabs.includes('engine') && (
+                      <Tab
+                          title="Voxel"
+                          icon={<Box size={13} className="text-[var(--solar-magenta)]"/>}
+                          active={activeTab === 'engine'}
+                          onClick={() => setActiveTab('engine')}
+                          onClose={(e) => closeTab('engine', e)}
+                      />
+                  )}
+                  {openTabs.includes('browser') && (
+                      <Tab
+                          title="Browser"
+                          icon={<Globe size={13} className="text-[var(--solar-blue)]"/>}
+                          active={activeTab === 'browser'}
+                          onClick={() => setActiveTab('browser')}
+                          onClose={(e) => closeTab('browser', e)}
+                      />
+                  )}
+                  {openTabs.includes('glb') && (
+                      <Tab
+                          title="GLB"
+                          icon={<Box size={13} className="text-[var(--solar-green)]"/>}
+                          active={activeTab === 'glb'}
+                          onClick={() => setActiveTab('glb')}
+                          onClose={(e) => closeTab('glb', e)}
+                      />
+                  )}
+                  {openTabs.includes('excalidraw') && (
+                      <Tab
+                          title="Draw"
+                          icon={<PenTool size={13} className="text-[var(--solar-orange)]"/>}
+                          active={activeTab === 'excalidraw'}
+                          onClick={() => setActiveTab('excalidraw')}
+                          onClose={(e) => closeTab('excalidraw', e)}
+                      />
+                  )}
+
+                  {/* Quick-open buttons for closed panels */}
+                  <div className="ml-auto flex items-center gap-0.5 pr-2 shrink-0">
+                      {!openTabs.includes('engine') && <QuickOpen label="Voxel" onClick={() => openTab('engine')} />}
+                      {!openTabs.includes('browser') && <QuickOpen label="Browser" onClick={() => openTab('browser')} />}
+                      {!openTabs.includes('glb') && <QuickOpen label="GLB" onClick={() => openTab('glb')} />}
+                      {!openTabs.includes('excalidraw') && <QuickOpen label="Draw" onClick={() => openTab('excalidraw')} />}
+                  </div>
+
                   {/* Decorative line below tabs */}
                   <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-[var(--border-subtle)] z-[-1]" />
               </div>
@@ -578,7 +649,7 @@ const App: React.FC = () => {
                       <div className="relative z-10 w-full h-full pointer-events-none flex flex-col justify-end pb-8">
                           <ToolLauncherBar onNavigate={(url) => {
                               setBrowserUrl(url);
-                              setActiveTab('browser');
+                              openTab('browser');
                           }} />
                       </div>
                   )}
@@ -594,7 +665,6 @@ const App: React.FC = () => {
                                       setActiveFile(prev => prev ? {
                                           ...prev,
                                           content: val,
-                                          // Set originalContent on first edit if not yet set
                                           originalContent: prev.originalContent ?? prev.content
                                       } : null);
                                   }
@@ -613,6 +683,13 @@ const App: React.FC = () => {
                           <GLBViewer url="https://imagedelivery.net/g7wf09fCONpnidkRnR_5vw/6454d6fa-d4f1-43ec-33fd-628d0e7cdb00/public" filename="Meshy_AI_Jet.glb" />
                       </div>
                   )}
+
+                  {/* Excalidraw — flex isolated to prevent layout bleed */}
+                  {activeTab === 'excalidraw' && (
+                      <div className="absolute inset-0 z-10" style={{ display: 'flex', flexDirection: 'column' }}>
+                          <ExcalidrawView />
+                      </div>
+                  )}
               </div>
 
               {/* 7. Bottom Terminal Drawer */}
@@ -622,7 +699,7 @@ const App: React.FC = () => {
           {/* 6. Optional Right Agent Panel */}
           {agentPosition === 'right' && (
               <div 
-                  className="bg-[var(--bg-panel)] flex flex-col shrink-0 transition-opacity z-30 relative group opacity-100"
+                  className="bg-[var(--bg-panel)] flex flex-col shrink-0 transition-opacity z-30 relative group opacity-100 glass-panel"
                   style={{ width: rightWidth, borderLeft: '1px solid var(--border-subtle)' }}
               >
                   <div className="h-10 border-b border-[var(--border-subtle)] flex items-center px-4 font-semibold text-[11px] tracking-widest uppercase text-[var(--text-muted)] shrink-0">Agent</div>
@@ -634,8 +711,8 @@ const App: React.FC = () => {
                           messages={chatMessages} 
                           setMessages={setChatMessages} 
                           onFileSelect={(file) => {
-                              setActiveFile({ ...file, originalContent: '' });
-                              setActiveTab('code');
+                              setActiveFile({ ...file, originalContent: file.content });
+                              openTab('code');
                           }}
                           onRunInTerminal={runInTerminal}
                        />
@@ -643,7 +720,7 @@ const App: React.FC = () => {
 
                   {/* Resizer Handle */}
                   <div 
-                      className="absolute -left-1 top-0 bottom-0 w-2 cursor-col-resize z-50 hover:bg-[var(--solar-cyan)]/50 transition-colors"
+                      className="absolute -left-1 top-0 bottom-0 w-2 cursor-col-resize z-50 hover:bg-[var(--solar-cyan)]/50 transition-colors glow-border"
                       onMouseDown={(e) => {
                           e.preventDefault();
                           const startX = e.clientX;
@@ -658,7 +735,7 @@ const App: React.FC = () => {
       </div>
       
       {/* 8. Global Status Bar Overlay */}
-      <StatusBar activeTab={activeTab === 'engine' ? 'Sandbox' : activeTab === 'code' ? 'TypeScript' : 'Preview' } />
+      <StatusBar activeTab={activeTab === 'engine' ? 'Sandbox' : activeTab === 'code' ? 'TypeScript' : 'Preview' } version="1.1.0" />
     </div>
   );
 };
@@ -675,16 +752,41 @@ const ActivityIcon: React.FC<{ icon: any, active: boolean, onClick: () => void, 
     </div>
 );
 
-const Tab: React.FC<{ title: string, icon: React.ReactNode, active: boolean, onClick: () => void }> = ({ title, icon, active, onClick }) => (
+const Tab: React.FC<{ title: React.ReactNode, icon: React.ReactNode, active: boolean, onClick: () => void, onClose?: (e: React.MouseEvent) => void }> = ({ title, icon, active, onClick, onClose }) => (
     <div 
         onClick={onClick}
-        className={`h-full flex items-center gap-2 px-4 text-[13px] select-none cursor-pointer border-r border-[var(--border-subtle)] relative ${active ? 'bg-[var(--bg-app)] text-[var(--solar-cyan)]' : 'bg-[var(--bg-panel)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]'}`}
+        className={`h-full flex items-center gap-1.5 pl-3 pr-2 text-[12px] select-none cursor-pointer border-r border-[var(--border-subtle)] relative group whitespace-nowrap shrink-0 ${
+            active 
+                ? 'bg-[var(--bg-app)] text-[var(--solar-cyan)]' 
+                : 'bg-[var(--bg-panel)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]'
+        }`}
     >
-        {active && <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--solar-cyan)]" />}
+        {active && <div className="absolute top-0 left-0 right-0 h-[2px] bg-[var(--solar-cyan)]" />}
         {icon}
-        {title}
+        <span className="max-w-[120px] truncate">{title}</span>
+        {onClose && (
+            <button
+                onClick={onClose}
+                className={`ml-1 p-0.5 rounded transition-all hover:bg-[var(--solar-red)]/20 hover:text-[var(--solar-red)] ${
+                    active ? 'opacity-60 hover:opacity-100' : 'opacity-0 group-hover:opacity-50 hover:!opacity-100'
+                }`}
+                title="Close tab"
+            >
+                <XIcon size={11} />
+            </button>
+        )}
         {!active && <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-[var(--border-subtle)]" />}
     </div>
+);
+
+const QuickOpen: React.FC<{ label: string, onClick: () => void }> = ({ label, onClick }) => (
+    <button
+        onClick={onClick}
+        className="text-[10px] px-2 py-0.5 rounded text-[var(--text-muted)] hover:text-[var(--solar-cyan)] hover:bg-[var(--bg-hover)] transition-colors border border-transparent hover:border-[var(--border-subtle)] font-mono"
+        title={`Open ${label}`}
+    >
+        + {label}
+    </button>
 );
 
 export default App;

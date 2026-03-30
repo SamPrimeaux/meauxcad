@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { R2Bucket, D1Database, Fetcher, ExecutionContext } from "@cloudflare/workers-types";
+import type { R2Bucket, D1Database, Fetcher, ExecutionContext, DurableObjectNamespace } from "@cloudflare/workers-types";
+import { MeauxCADSession } from "./src/MeauxCADSession";
 
 export interface Env {
   GEMINI_API_KEY: string;
@@ -8,7 +9,12 @@ export interface Env {
   SPLINEICONS_STORAGE: R2Bucket;
   DB: D1Database;
   ASSETS: Fetcher;
+  MCAD_SESSION: DurableObjectNamespace;
+  INTERNAL_API_SECRET: string;
+  MCP_AUTH_TOKEN: string;
 }
+
+const VERSION = "1.1.0"; // Integration v1.1: DB GUI + Drive Prep
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -262,6 +268,64 @@ export default {
       }
     }
 
+    if (request.method === 'GET' && url.pathname === '/api/version') {
+      return new Response(JSON.stringify({ version: VERSION, deployed_at: new Date().toISOString() }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // ── Database Explorer: D1 Inspection ────────────────────────────────────────
+    if (request.method === 'GET' && url.pathname === '/api/db/tables') {
+      try {
+        const { results } = await env.DB.prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' ORDER BY name"
+        ).all();
+        return new Response(JSON.stringify({ success: true, tables: results.map((r: any) => r.name) }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (e: any) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/db/query') {
+      try {
+        const { sql, params } = await request.json() as { sql: string; params?: any[] };
+        const stmt = env.DB.prepare(sql);
+        const { results, meta } = await (params ? stmt.bind(...params) : stmt).all();
+        return new Response(JSON.stringify({ success: true, results, meta }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (e: any) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+      }
+    }
+
+    if (request.method === 'GET' && url.pathname.startsWith('/api/db/schema/')) {
+      const table = url.pathname.split('/').pop()!;
+      try {
+        const { results } = await env.DB.prepare(`PRAGMA table_info(${table})`).all();
+        return new Response(JSON.stringify({ success: true, columns: results }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (e: any) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+      }
+    }
+
+    // ── Google Drive Proxy Stub ────────────────────────────────────────────────
+    if (request.method === 'POST' && url.pathname === '/api/drive/proxy') {
+      try {
+        // This is a placeholder for real OAuth-signed requests
+        const { method, path, body } = await request.json() as { method: string; path: string; body: any };
+        return new Response(JSON.stringify({ success: true, note: "Drive Proxy Active (Stub)", path }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (e: any) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+      }
+    }
+
     if (request.method === 'GET' && url.pathname === '/api/theme') {
       try {
         const result = await env.DB.prepare('SELECT config FROM cms_themes WHERE is_system = 1 LIMIT 1').first();
@@ -271,8 +335,104 @@ export default {
       }
     }
 
+    // ── Task 2: Session Durable Object Routes ───────────────────────────────────
+    if (request.method === 'GET' && url.pathname.startsWith('/api/session/')) {
+      const workspaceId = url.pathname.split('/')[3];
+      const id = env.MCAD_SESSION.idFromName(workspaceId);
+      const stub = env.MCAD_SESSION.get(id);
+      return stub.fetch(new Request('https://do/get'));
+    }
+
+    if (request.method === 'POST' && url.pathname.match(/^\/api\/session\/[^/]+\/canvas$/)) {
+      const workspaceId = url.pathname.split('/')[3];
+      const id = env.MCAD_SESSION.idFromName(workspaceId);
+      const stub = env.MCAD_SESSION.get(id);
+      return stub.fetch(new Request('https://do/canvas', { method: 'POST', body: request.body }));
+    }
+
+    if (request.method === 'POST' && url.pathname.match(/^\/api\/session\/[^/]+\/theme$/)) {
+      const workspaceId = url.pathname.split('/')[3];
+      const id = env.MCAD_SESSION.idFromName(workspaceId);
+      const stub = env.MCAD_SESSION.get(id);
+      return stub.fetch(new Request('https://do/theme', { method: 'POST', body: request.body }));
+    }
+
+    // ── Task 4: Theme Routes ───────────────────────────────────────────────────
+    if (request.method === 'GET' && url.pathname === '/api/themes') {
+      try {
+        const { results } = await env.DB.prepare(
+          `SELECT id, name, slug, config, preview_color FROM cms_themes WHERE is_active = 1 ORDER BY name`
+        ).all();
+        return new Response(JSON.stringify({ success: true, data: results }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (e: any) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+      }
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/themes/active') {
+      const workspaceId = url.searchParams.get('workspace') ?? 'meauxcad';
+      try {
+        const wsTheme = await env.DB.prepare(
+          `SELECT theme_id FROM workspace_settings WHERE workspace_id = ? LIMIT 1`
+        ).first<{ theme_id: string }>();
+
+        const id = wsTheme?.theme_id ?? null;
+        const query = id
+          ? `SELECT config FROM cms_themes WHERE id = ? LIMIT 1`
+          : `SELECT config FROM cms_themes WHERE is_system = 1 LIMIT 1`;
+        const theme = await env.DB.prepare(query).bind(...(id ? [id] : [])).first<{ config: string }>();
+        const cssVars = theme?.config ? JSON.parse(theme.config) : {};
+        return new Response(JSON.stringify({ success: true, data: cssVars }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (e: any) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/themes/apply') {
+      try {
+        const { slug, theme_id, workspace_id } = await request.json() as { slug: string; theme_id: string; workspace_id: string };
+        await env.DB.prepare(
+          `INSERT INTO workspace_settings (workspace_id, theme_id, updated_at)
+           VALUES (?, ?, unixepoch())
+           ON CONFLICT(workspace_id) DO UPDATE SET theme_id = excluded.theme_id, updated_at = excluded.updated_at`
+        ).bind(workspace_id ?? 'meauxcad', theme_id).run();
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (e: any) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+      }
+    }
+
+    // ── Task 5: MCP Proxy ──────────────────────────────────────────────────────
+    if (request.method === 'POST' && url.pathname === '/api/mcp/invoke') {
+      try {
+        const body = await request.json();
+        const resp = await fetch('https://mcp.inneranimalmedia.com/mcp', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${env.MCP_AUTH_TOKEN}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body)
+        });
+        const data = await resp.json();
+        return new Response(JSON.stringify(data), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (e: any) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+      }
+    }
+
     // Default to serving static assets
     return env.ASSETS.fetch(request as any);
   }
 };
+
+export { MeauxCADSession };
 

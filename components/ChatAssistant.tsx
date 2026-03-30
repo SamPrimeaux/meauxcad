@@ -313,45 +313,46 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({ activeProject, act
         )}
       </div>
 
-      {/* ── FROSTED INPUT FOOTER (fixed at bottom) ────────── */}
-      <div className="shrink-0 w-full border-t border-[var(--border-subtle)] bg-[var(--bg-panel)]/90 backdrop-blur-md px-4 pt-3 pb-4">
-        {/* Selector pills */}
-        <div className="flex items-center gap-2 mb-3">
-          {/* Mode */}
+      {/* ── PREMIUM INPUT FOOTER ────────────────────── */}
+      <div className="shrink-0 w-full p-3 bg-[var(--bg-panel)] border-t border-[var(--border-subtle)]">
+
+        {/* Model + Mode selector row */}
+        <div className="flex items-center gap-2 mb-2 px-0.5">
+          {/* Mode pill */}
           <div className="relative">
             <button
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-[var(--bg-app)] border border-[#1e3e4a] hover:border-[var(--solar-cyan)]/50 text-[var(--text-main)] rounded-lg text-[11px] transition-all font-mono"
+              className="flex items-center gap-1 px-2 py-0.5 bg-[var(--bg-app)] border border-[#1e3e4a] hover:border-[var(--solar-cyan)]/50 rounded-md text-[10px] font-mono text-[var(--text-muted)] hover:text-[var(--text-main)] transition-all"
               onClick={() => { setIsModeOpen(!isModeOpen); setIsModelOpen(false); }}
             >
-              <span className="text-[var(--solar-cyan)] opacity-70">∞</span> {mode} <ChevronDown size={9} className="opacity-40 ml-1" />
+              <span className="text-[var(--solar-cyan)]">∞</span> {mode} <ChevronDown size={8} className="opacity-40" />
             </button>
             {isModeOpen && (
-              <div className="absolute bottom-full mb-2 left-0 bg-[#060e14] border border-[#1e3e4a] rounded-xl shadow-2xl p-1.5 flex flex-col min-w-[150px] text-[12px] z-[100]">
+              <div className="absolute bottom-full mb-2 left-0 bg-[#060e14] border border-[#1e3e4a] rounded-xl shadow-2xl p-1 flex flex-col min-w-[130px] text-[11px] z-[100]">
                 {['Auto', 'Agent', 'Plan', 'Debug', 'Research'].map(m => (
-                  <button key={m} className={`px-3 py-2 text-left hover:bg-[#0a2d38] cursor-pointer rounded-lg flex items-center justify-between transition-colors ${mode === m ? 'text-[var(--solar-cyan)] bg-[#0a2d38]' : 'text-[var(--text-muted)]'}`} onClick={() => { setMode(m); setIsModeOpen(false); }}>
-                    {m} {mode === m && <span className="opacity-50 text-[10px]">✓</span>}
+                  <button key={m} className={`px-3 py-1.5 text-left hover:bg-[#0a2d38] cursor-pointer rounded-lg flex items-center justify-between transition-colors ${mode === m ? 'text-[var(--solar-cyan)] bg-[#0a2d38]' : 'text-[var(--text-muted)]'}`} onClick={() => { setMode(m); setIsModeOpen(false); }}>
+                    {m} {mode === m && <span className="opacity-50 text-[9px]">✓</span>}
                   </button>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Model */}
+          {/* Model pill */}
           <div className="relative flex-1 min-w-0">
             <button
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-[var(--bg-app)] border border-[#1e3e4a] hover:border-[var(--solar-cyan)]/50 text-[var(--text-main)] rounded-lg text-[11px] transition-all font-mono w-full uppercase tracking-tight max-w-[220px]"
+              className="flex items-center gap-1 px-2 py-0.5 bg-[var(--bg-app)] border border-[#1e3e4a] hover:border-[var(--solar-cyan)]/50 rounded-md text-[10px] font-mono text-[var(--text-muted)] hover:text-[var(--text-main)] transition-all w-full truncate"
               onClick={() => { setIsModelOpen(!isModelOpen); setIsModeOpen(false); }}
             >
-              <Sparkles size={10} className="text-[var(--solar-yellow)] shrink-0" />
-              <span className="truncate">{selectedModel}</span>
-              <ChevronDown size={9} className="opacity-40 shrink-0" />
+              <Sparkles size={9} className="text-[var(--solar-yellow)] shrink-0" />
+              <span className="truncate uppercase tracking-tight">{selectedModel}</span>
+              <ChevronDown size={8} className="opacity-40 shrink-0 ml-auto" />
             </button>
             {isModelOpen && (
-              <div className="absolute bottom-full mb-2 left-0 bg-[#060e14] border border-[#1e3e4a] rounded-xl shadow-2xl flex flex-col min-w-[220px] text-[12px] z-[100] max-h-72 overflow-y-auto">
-                <div className="px-3 py-2.5 text-[10px] text-[var(--text-muted)] font-black uppercase tracking-widest border-b border-[#1e3e4a]">Compute</div>
-                <div className="p-1.5 flex flex-col gap-0.5">
+              <div className="absolute bottom-full mb-2 left-0 bg-[#060e14] border border-[#1e3e4a] rounded-xl shadow-2xl flex flex-col min-w-[200px] text-[11px] z-[100] max-h-60 overflow-y-auto">
+                <div className="px-3 py-2 text-[9px] text-[var(--text-muted)] font-black uppercase tracking-widest border-b border-[#1e3e4a]">Compute</div>
+                <div className="p-1 flex flex-col gap-0.5">
                   {models.map(m => (
-                    <button key={m.id} className={`px-3 py-2 text-left hover:bg-[#0a2d38] cursor-pointer rounded-lg truncate transition-colors ${selectedModel === m.name ? 'text-[var(--solar-cyan)] bg-[#0a2d38]' : 'text-[var(--text-muted)]'}`} onClick={() => { setSelectedModel(m.name); setIsModelOpen(false); }}>
+                    <button key={m.id} className={`px-3 py-1.5 text-left hover:bg-[#0a2d38] cursor-pointer rounded-lg truncate transition-colors ${selectedModel === m.name ? 'text-[var(--solar-cyan)] bg-[#0a2d38]' : 'text-[var(--text-muted)]'}`} onClick={() => { setSelectedModel(m.name); setIsModelOpen(false); }}>
                       {m.name}
                     </button>
                   ))}
@@ -361,8 +362,8 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({ activeProject, act
           </div>
         </div>
 
-        {/* Input box */}
-        <div className="flex items-end gap-2 bg-[#060e14] border border-[#1e3e4a] focus-within:border-[var(--solar-cyan)]/60 rounded-xl transition-all shadow-inner">
+        {/* Input box — premium frosted card */}
+        <div className="flex flex-col bg-[#060e14] border border-[#1e3e4a] focus-within:border-[var(--solar-cyan)]/60 rounded-xl transition-all shadow-inner overflow-hidden">
           <textarea
             ref={textareaRef}
             value={input}
@@ -375,26 +376,38 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({ activeProject, act
             }}
             placeholder="Ask the Agent anything..."
             rows={1}
-            className="flex-1 bg-transparent p-3.5 pr-2 text-[13px] focus:outline-none text-[var(--text-main)] placeholder:text-[#325b68] resize-none font-sans leading-relaxed"
-            style={{ minHeight: '48px', maxHeight: '180px' }}
+            className="w-full bg-transparent px-3.5 pt-3 pb-1 text-[13px] focus:outline-none text-[var(--text-main)] placeholder:text-[#2e5464] resize-none font-sans leading-relaxed"
+            style={{ minHeight: '44px', maxHeight: '160px' }}
           />
-          <div className="flex items-center gap-1 p-2 pb-2.5 shrink-0">
-            <button className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-white/5 rounded-lg transition-all" title="Attach">
-              <Plus size={15} />
-            </button>
-            <button className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-white/5 rounded-lg transition-all" title="Voice">
-              <Mic size={15} />
-            </button>
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || isLoading}
-              className={`p-2 rounded-lg transition-all ml-0.5 ${input.trim() && !isLoading ? 'bg-[var(--solar-cyan)] text-black shadow-[0_0_12px_rgba(45,212,191,0.3)] hover:brightness-110' : 'text-[#2a4d58] bg-transparent'}`}
-            >
-              <Send size={14} />
-            </button>
+          {/* Action row below textarea */}
+          <div className="flex items-center justify-between px-2 pb-2">
+            <div className="flex items-center gap-1">
+              <button className="p-1.5 text-[var(--text-muted)] hover:text-[var(--solar-cyan)] hover:bg-white/5 rounded-lg transition-all" title="Attach file">
+                <Plus size={14} />
+              </button>
+              <button className="p-1.5 text-[var(--text-muted)] hover:text-[var(--solar-cyan)] hover:bg-white/5 rounded-lg transition-all" title="Voice input">
+                <Mic size={14} />
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] text-[#2e5464] font-mono select-none">⏎ send · ⇧⏎ newline</span>
+              <button
+                onClick={handleSend}
+                disabled={!input.trim() || isLoading}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                  input.trim() && !isLoading
+                    ? 'bg-[var(--solar-cyan)] text-[#00212b] shadow-[0_0_16px_rgba(45,212,191,0.25)] hover:brightness-110 hover:shadow-[0_0_20px_rgba(45,212,191,0.4)]'
+                    : 'text-[#2a4d58] bg-[#0a1c22] cursor-not-allowed'
+                }`}
+              >
+                {isLoading ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                {isLoading ? 'Sending' : 'Send'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
 };
+
