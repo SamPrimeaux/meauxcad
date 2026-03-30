@@ -11,7 +11,7 @@
   },
 
   "observability": {
-    "enabled": false,
+    "enabled": true,
     "head_sampling_rate": 1,
     "logs": {
       "enabled": true,
@@ -24,6 +24,10 @@
       "persist": true,
       "head_sampling_rate": 1
     }
+  },
+
+  "build": {
+    "command": "npm run build"
   },
 
   "r2_buckets": [
