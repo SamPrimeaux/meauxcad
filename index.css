@@ -1,0 +1,70 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Solarized Dark Primitive Colors */
+  --solar-base03:  #00212b; /* Deepest background — slightly richer navy */
+  --solar-base02:  #0a2d38; /* Panel background — warmer dark teal */
+  --solar-base01:  #4a7a87; /* Borders, inactive — raised for legibility */
+  --solar-base00:  #6e8d96; /* Secondary text */
+  --solar-base0:   #9cb5bc; /* Primary text — raised for better contrast */
+  --solar-base1:   #b0ccd2; /* Heading text — brighter */
+
+  /* Accents */
+  --solar-yellow:  #e6ac00;
+  --solar-orange:  #d95f1c;
+  --solar-red:     #e63333;
+  --solar-magenta: #d33682;
+  --solar-violet:  #7c83d4;
+  --solar-blue:    #3a9fe8;
+  --solar-cyan:    #2dd4bf;
+  --solar-green:   #a3b800;
+
+  /* IDE UI Layout Semantic Tokens */
+  --bg-app:        var(--solar-base03);
+  --bg-panel:      var(--solar-base02);
+  --bg-hover:      rgba(42, 161, 152, 0.08);
+  --border-subtle: #1e3e4a;
+  --border-focus:  var(--solar-cyan);
+
+  /* Typography */
+  --text-main:     var(--solar-base0);
+  --text-muted:    #7a9aaa;
+  --text-heading:  var(--solar-base1);
+
+  /* Scene / 3D */
+  --scene-bg:      #060e14;
+
+  /* Interactive / Brand */
+  --accent-primary:   var(--solar-blue);
+  --accent-secondary: var(--solar-cyan);
+  --accent-warning:   var(--solar-yellow);
+  --accent-danger:    var(--solar-red);
+}
+
+body {
+    background: var(--bg-app);
+    color: var(--text-main);
+}
+
+::selection {
+    background: rgba(42, 161, 152, 0.2); /* Cyan tint */
+    color: var(--solar-cyan);
+}
+
+/* Custom IDE scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: var(--bg-app);
+}
+::-webkit-scrollbar-thumb {
+    background: var(--bg-panel);
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--border-subtle);
+}

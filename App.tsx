@@ -1,0 +1,690 @@
+
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
+
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { VoxelEngine } from './services/VoxelEngine';
+import { StudioSidebar } from './components/StudioSidebar';
+import { UIOverlay } from './components/UIOverlay';
+import { ChatAssistant } from './components/ChatAssistant';
+import { WelcomeLauncher } from './components/WelcomeLauncher';
+import { XTermShell, XTermShellHandle } from './components/XTermShell';
+import { ExtensionsPanel } from './components/ExtensionsPanel';
+import { MonacoEditorView } from './components/MonacoEditorView';
+import { LocalExplorer } from './components/LocalExplorer';
+import { BrowserView } from './components/BrowserView';
+import { GLBViewer } from './components/GLBViewer';
+import { SettingsPanel } from './components/SettingsPanel';
+import { ToolLauncherBar } from './components/ToolLauncherBar';
+import { StatusBar } from './components/StatusBar';
+import { ProjectType, AppState, GameEntity, GenerationConfig, ArtStyle, SceneConfig, CADTool, CustomAsset, CADPlane } from './types';
+import { Sparkles, Files, Search, GitBranch, PlayCircle, Blocks, Box, Settings, PanelLeftClose, PanelRightClose, Terminal as TermIcon, SplitSquareHorizontal, LayoutTemplate, Network, Layers, Monitor, ChevronDown, Bug, Github, Database, FolderOpen, Globe } from 'lucide-react';
+
+const App: React.FC = () => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const engineRef = useRef<VoxelEngine | null>(null);
+  const terminalRef = useRef<XTermShellHandle>(null);
+  
+  const [activeProject, setActiveProject] = useState<ProjectType>(ProjectType.SANDBOX);
+  const [appState, setAppState] = useState<AppState>(AppState.EDITING);
+  const [voxelCount, setVoxelCount] = useState<number>(0);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [customAssets, setCustomAssets] = useState<CustomAsset[]>([]);
+  
+  // History Management
+  const [undoStack, setUndoStack] = useState<GameEntity[]>([]);
+  const [redoStack, setRedoStack] = useState<GameEntity[]>([]);
+
+  // IDE State
+  const [activeActivity, setActiveActivity] = useState<'cad' | 'files' | 'search' | 'mcps' | 'git' | 'debug' | 'remote' | 'actions' | 'sql' | 'projects' | 'settings' | null>('files');
+  const [agentPosition, setAgentPosition] = useState<'right' | 'left' | 'off'>('right');
+  const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'welcome' | 'engine' | 'code' | 'browser' | 'glb'>('welcome');
+  const [activeFile, setActiveFile] = useState<{name: string, content: string, handle?: any, originalContent?: string} | null>(null);
+  const [browserUrl, setBrowserUrl] = useState<string | undefined>(undefined);
+
+  // Dynamic Layout & Lifted State
+  const [leftWidth, setLeftWidth] = useState(288);
+  const [rightWidth, setRightWidth] = useState(320);
+  const [chatMessages, setChatMessages] = useState<{role: 'user' | 'assistant', content: string}[]>([
+      { role: 'assistant', content: 'Hi! I\'m your Meaaux Studio Agent. How can I assist with your workspace?' }
+  ]);
+
+  const toggleActivity = (activity: 'cad' | 'files' | 'search' | 'mcps' | 'git' | 'debug' | 'remote' | 'actions' | 'sql' | 'projects' | 'settings') => {
+      setActiveActivity(prev => prev === activity ? null : activity);
+  };
+
+  // ── File save (File System Access API write-back) ────────────────────────
+  const isDirty = !!activeFile && activeFile.originalContent !== undefined && activeFile.content !== activeFile.originalContent;
+
+  const handleSaveFile = useCallback(async (content: string) => {
+    if (!activeFile) return;
+    if (activeFile.handle) {
+      try {
+        const writable = await activeFile.handle.createWritable();
+        await writable.write(content);
+        await writable.close();
+        // Commit — new baseline
+        setActiveFile(prev => prev ? { ...prev, content, originalContent: content } : null);
+      } catch (err) {
+        console.error('Save failed:', err);
+      }
+    } else {
+      // No handle (agent-generated file) — just update originalContent to remove dirty indicator
+      setActiveFile(prev => prev ? { ...prev, content, originalContent: content } : null);
+    }
+  }, [activeFile]);
+
+  // ── Terminal bridge ──────────────────────────────────────────────────────
+  const runInTerminal = useCallback((cmd: string) => {
+    if (!isTerminalOpen) setIsTerminalOpen(true);
+    // Small delay to let terminal mount before writing
+    setTimeout(() => terminalRef.current?.runCommand(cmd), 100);
+  }, [isTerminalOpen]);
+
+  const writeToTerminal = useCallback((text: string) => {
+    if (!isTerminalOpen) setIsTerminalOpen(true);
+    setTimeout(() => terminalRef.current?.writeToTerminal(text), 100);
+  }, [isTerminalOpen]);
+
+  // Dynamic CMS Theme Fetcher
+  useEffect(() => {
+    fetch('/api/theme')
+      .then(res => res.json())
+      .then(data => {
+        if (data.config && typeof data.config === 'string') {
+          try {
+             const vars = JSON.parse(data.config);
+             Object.entries(vars).forEach(([k, v]) => {
+                document.documentElement.style.setProperty(k, String(v));
+             });
+          } catch(e) {}
+        }
+      })
+      .catch(console.error);
+  }, []);
+
+  // Cmd+J Listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'j') {
+            setIsTerminalOpen(p => !p);
+            e.preventDefault();
+        }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Native Cmd+S FileSystem Save Interceptor
+  useEffect(() => {
+      const handleSave = async (e: KeyboardEvent) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+              e.preventDefault();
+              if (activeTab === 'code' && activeFile?.handle) {
+                  try {
+                      const writable = await activeFile.handle.createWritable();
+                      await writable.write(activeFile.content);
+                      await writable.close();
+                      alert(`Saved ${activeFile.name} locally!`);
+                  } catch (err) {
+                      console.error("Save failed:", err);
+                      // In case they didn't grant permission or it's read-only
+                  }
+              }
+          }
+      };
+      
+      window.addEventListener('keydown', handleSave);
+      return () => window.removeEventListener('keydown', handleSave);
+  }, [activeTab, activeFile]);
+
+  const [genConfig, setGenConfig] = useState<GenerationConfig>({
+    style: ArtStyle.CYBERPUNK,
+    density: 5,
+    usePhysics: true,
+    cadTool: CADTool.NONE,
+    cadPlane: CADPlane.XZ,
+    extrusion: 1
+  });
+
+  const [sceneConfig, setSceneConfig] = useState<SceneConfig>({
+    ambientIntensity: 1.5,
+    sunColor: '#ffffff',
+    castShadows: true,
+    showPhysicsDebug: false
+  });
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const engine = new VoxelEngine(
+      containerRef.current,
+      (s) => setAppState(s),
+      (c) => setVoxelCount(c)
+    );
+    engineRef.current = engine;
+    
+    // Wire up engine events for history
+    engine.setOnEntityCreated((entity) => {
+      setUndoStack(prev => [...prev, entity]);
+      setRedoStack([]); // Clear redo on new action
+    });
+
+    // Initial sync
+    engine.updateLighting(sceneConfig);
+    engine.setCADPlane(genConfig.cadPlane);
+    engine.setExtrusion(genConfig.extrusion);
+
+    const handleResize = () => engine.handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      engine.cleanup();
+    };
+  }, []);
+
+  useEffect(() => {
+    engineRef.current?.updateLighting(sceneConfig);
+  }, [sceneConfig]);
+
+  const handleUndo = () => {
+    if (undoStack.length === 0) return;
+    const last = undoStack[undoStack.length - 1];
+    engineRef.current?.removeEntity(last.id);
+    setUndoStack(prev => prev.slice(0, -1));
+    setRedoStack(prev => [...prev, last]);
+  };
+
+  const handleRedo = () => {
+    if (redoStack.length === 0) return;
+    const next = redoStack[redoStack.length - 1];
+    engineRef.current?.spawnEntity(next);
+    setRedoStack(prev => prev.slice(0, -1));
+    setUndoStack(prev => [...prev, next]);
+  };
+
+  const handleProjectSwitch = (type: ProjectType) => {
+    setActiveProject(type);
+    engineRef.current?.setProjectType(type);
+    setGenConfig(prev => ({ ...prev, cadTool: CADTool.NONE }));
+    setUndoStack([]);
+    setRedoStack([]);
+    // Auto-surface the engine canvas when a 3D project is picked
+    setActiveTab('engine');
+    setActiveActivity('cad');
+  };
+
+  const handleUpdateGenConfig = (cfg: Partial<GenerationConfig>) => {
+    const next = { ...genConfig, ...cfg };
+    setGenConfig(next);
+    
+    if (cfg.cadTool !== undefined) engineRef.current?.setCADTool(cfg.cadTool);
+    if (cfg.cadPlane !== undefined) engineRef.current?.setCADPlane(cfg.cadPlane);
+    if (cfg.extrusion !== undefined) engineRef.current?.setExtrusion(cfg.extrusion);
+  };
+
+  const handleSpawnModel = (name: string, url: string, scale: number) => {
+    const entity: GameEntity = {
+      id: `asset_${Date.now()}`,
+      name: name,
+      type: 'prop',
+      modelUrl: url,
+      scale: scale,
+      position: { x: (Math.random() - 0.5) * 10, y: 10, z: (Math.random() - 0.5) * 10 },
+      behavior: { type: 'dynamic', mass: 10, restitution: 0.2 }
+    };
+    engineRef.current?.spawnEntity(entity);
+    setUndoStack(prev => [...prev, entity]);
+    setRedoStack([]);
+  };
+
+  const handleAddCustomAsset = (name: string, url: string) => {
+    const newAsset: CustomAsset = {
+      id: `custom_${Date.now()}`,
+      name,
+      url
+    };
+    setCustomAssets(prev => [...prev, newAsset]);
+  };
+
+  const handleRemoveCustomAsset = (id: string) => {
+    setCustomAssets(prev => prev.filter(a => a.id !== id));
+  };
+
+  const handleSave = async (id: string) => {
+    try {
+      const dataToSave = { undoStack, genConfig, sceneConfig }; 
+      await fetch(`/api/cad/upload/${id}`, {
+          method: 'POST',
+          body: JSON.stringify(dataToSave)
+      });
+      alert(`Project saved as ${id} to R2!`);
+    } catch(err) {
+      console.error(err);
+      alert('Save failed');
+    }
+  };
+
+  const handleLoad = async (id: string) => {
+    try {
+      const res = await fetch(`/api/cad/get/${id}`);
+      if (!res.ok) throw new Error('Not found');
+      const data = await res.json();
+      
+      engineRef.current?.clearWorld();
+      setUndoStack([]);
+      setRedoStack([]);
+      
+      if (data.undoStack) {
+          data.undoStack.forEach((ent: GameEntity) => {
+              engineRef.current?.spawnEntity(ent);
+              setUndoStack(prev => [...prev, ent]);
+          });
+      }
+      if (data.genConfig) handleUpdateGenConfig(data.genConfig);
+      if (data.sceneConfig) setSceneConfig(data.sceneConfig);
+      
+      alert(`Project loaded from R2!`);
+    } catch(err) {
+      console.error(err);
+      alert('Load failed');
+    }
+  };
+
+  const handleCommand = async (prompt: string) => {
+    if (prompt.startsWith('save ')) {
+        const id = prompt.replace('save ', '').trim();
+        await handleSave(id);
+        return;
+    }
+    if (prompt.startsWith('load ')) {
+        const id = prompt.replace('load ', '').trim();
+        await handleLoad(id);
+        return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const styleGuidelines = {
+        [ArtStyle.CYBERPUNK]: "Neon accents, high-contrast, glowing colors (emissive), sharp technological angles.",
+        [ArtStyle.BRUTALIST]: "Monolithic shapes, concrete-gray color schemes, massive proportions, minimal decoration.",
+        [ArtStyle.ORGANIC]: "Soft curves, earth tones (greens/browns), flowing bio-inspired shapes.",
+        [ArtStyle.LOW_POLY]: "Basic geometric primitives, simple color blocking, retro 90s game look."
+      };
+      const densityMultiplier = genConfig.density * 50;
+      
+      const fullPrompt = `
+          PROJECT: ${activeProject}
+          STYLE PRESET: ${genConfig.style}
+          STYLE GUIDELINES: ${styleGuidelines[genConfig.style]}
+          PHYSICS ENABLED: ${genConfig.usePhysics}
+          DETAIL LEVEL (DENSITY): ${genConfig.density}/10 (Use roughly ${densityMultiplier} voxels per entity)
+          
+          COMMAND: "${prompt}"
+          
+          Return a JSON array of NEW entities. 
+          Behaviors: 'static', 'dynamic', 'hover', 'rotate'.
+          If physics is enabled, use 'dynamic' for objects that should fall and collide.
+          Include 'mass' (0.5 to 10), 'restitution' (0 to 1), and 'friction' (0 to 1) in behavior if dynamic.
+          Colors: Use hex strings appropriate for ${genConfig.style}.
+      `;
+
+      const response = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: fullPrompt })
+      });
+      const data = await response.json();
+
+      if (data.text && engineRef.current) {
+        const entities: any[] = JSON.parse(data.text);
+        entities.forEach(ent => {
+            const formattedVoxels = ent.voxels.map((v: any) => ({
+                ...v,
+                color: typeof v.color === 'string' ? parseInt(v.color.replace('#', ''), 16) : v.color
+            }));
+            const finalEntity = { ...ent, voxels: formattedVoxels };
+            engineRef.current?.spawnEntity(finalEntity);
+            setUndoStack(prev => [...prev, finalEntity]);
+        });
+        setRedoStack([]);
+      }
+    } catch (err) {
+      console.error("Studio Operation Failed", err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="w-full h-screen bg-[var(--bg-app)] overflow-hidden text-[var(--text-main)] font-sans flex flex-col">
+      {/* 1. TOP WINDOW BAR */}
+      <div className="h-10 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] flex items-center justify-between px-3 shrink-0">
+          <div className="flex items-center gap-1.5 opacity-80 pl-2 shrink-0">
+              <img src="https://imagedelivery.net/g7wf09fCONpnidkRnR_5vw/ac515729-af6b-4ea5-8b10-e581a4d02100/thumbnail" alt="IAM" className="w-5 h-5 object-contain drop-shadow" />
+              <span className="text-[12px] font-bold tracking-wide text-white">IAM Explorer</span>
+          </div>
+          
+          {/* Center Dropdown / Project Search Bar */}
+          <div className="flex items-center shrink-0 w-full max-w-[400px]">
+              <div className="w-full relative flex items-center bg-[var(--bg-app)] border border-[var(--border-subtle)] hover:border-[var(--border-focus)] transition-colors rounded shadow-inner h-6">
+                  <Search size={12} className="text-[var(--text-muted)] absolute left-2.5" />
+                  <input 
+                      type="text"
+                      placeholder="MeauxCAD / Project Search..."
+                      className="w-full bg-transparent pl-7 pr-2 py-1 text-[11px] focus:outline-none placeholder:text-[var(--text-muted)] text-[var(--text-main)]"
+                  />
+              </div>
+          </div>
+
+          {/* Right Action Icons */}
+          <div className="flex gap-1.5 items-center mr-1 shrink-0">
+              <button 
+                  title="Toggle Agent Side"
+                  className="p-1 px-1.5 text-[var(--text-muted)] hover:text-white rounded transition-colors"
+                  onClick={() => setAgentPosition(p => p === 'right' ? 'left' : p === 'left' ? 'off' : 'right')}
+              >
+                  {agentPosition === 'left' ? <PanelLeftClose size={15} /> : <PanelRightClose size={15} />}
+              </button>
+              <button 
+                  title="Settings"
+                  onClick={() => toggleActivity('settings')}
+                  className="p-1 px-1.5 text-[var(--text-muted)] hover:text-white rounded transition-colors"
+              >
+                  <Settings size={15} />
+              </button>
+              <button 
+                  title="Toggle Terminal Drawer (Cmd+J)"
+                  className="p-1 px-1.5 text-[var(--text-muted)] hover:text-white rounded transition-colors"
+                  onClick={() => setIsTerminalOpen(p => !p)}
+              >
+                  <SplitSquareHorizontal size={15} className={isTerminalOpen ? 'text-[var(--solar-cyan)]' : ''} />
+              </button>
+          </div>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
+          {/* 2. ACTIVITY BAR (Extreme Left) */}
+          <div className="w-12 bg-[var(--bg-panel)] flex flex-col items-center py-4 gap-4 border-r border-[var(--border-subtle)] shrink-0 z-50">
+              <ActivityIcon icon={Files} title="Explorer" active={activeActivity === 'files'} onClick={() => toggleActivity('files')} />
+              <ActivityIcon icon={Search} title="Search" active={activeActivity === 'search'} onClick={() => toggleActivity('search')} />
+              <ActivityIcon icon={GitBranch} title="Source Control" active={activeActivity === 'git'} onClick={() => toggleActivity('git')} />
+              <ActivityIcon icon={Bug} title="Run & Debug" active={activeActivity === 'debug'} onClick={() => toggleActivity('debug')} />
+              <ActivityIcon icon={Network} title="Remote Explorers" active={activeActivity === 'remote'} onClick={() => toggleActivity('remote')} />
+              <ActivityIcon icon={Layers} title="Tools & MCP" active={activeActivity === 'mcps'} onClick={() => toggleActivity('mcps')} />
+              <ActivityIcon icon={Github} title="GitHub Actions" active={activeActivity === 'actions'} onClick={() => toggleActivity('actions')} />
+              <ActivityIcon icon={Database} title="SQLTools" active={activeActivity === 'sql'} onClick={() => toggleActivity('sql')} />
+              
+              <div className="flex-1" />
+              <ActivityIcon icon={FolderOpen} title="Projects" active={activeActivity === 'projects'} onClick={() => toggleActivity('projects')} />
+              <ActivityIcon icon={Monitor} title="Engine View" active={activeActivity === 'cad'} onClick={() => toggleActivity('cad')} />
+              <ActivityIcon icon={Settings} title="Settings" active={activeActivity === 'settings'} onClick={() => toggleActivity('settings')} />
+          </div>
+
+          {/* Optional Left Agent Panel */}
+          {agentPosition === 'left' && (
+              <div 
+                  className="bg-[var(--bg-panel)] flex flex-col shrink-0 transition-opacity relative group z-30 opacity-100"
+                  style={{ width: rightWidth, borderRight: '1px solid var(--border-subtle)' }}
+              >
+                  <div className="h-10 border-b border-[var(--border-subtle)] flex items-center px-4 font-semibold text-[11px] tracking-widest uppercase text-[var(--text-muted)] shrink-0">Agent</div>
+                  <ChatAssistant 
+                      activeProject={activeProject} 
+                      activeFileContent={activeFile?.content}
+                      activeFileName={activeFile?.name}
+                      messages={chatMessages} 
+                      setMessages={setChatMessages} 
+                      onFileSelect={(file) => {
+                          setActiveFile({ ...file, originalContent: '' });
+                          setActiveTab('code');
+                      }}
+                      onRunInTerminal={runInTerminal}
+                  />
+
+                  {/* Resizer Handle */}
+                  <div 
+                      className="absolute -right-1 top-0 bottom-0 w-2 cursor-col-resize z-50 hover:bg-[var(--solar-cyan)]/50 transition-colors"
+                      onMouseDown={(e) => {
+                          e.preventDefault();
+                          const startX = e.clientX;
+                          const startWidth = rightWidth;
+                          const handleMouseMove = (me: MouseEvent) => setRightWidth(Math.max(250, Math.min(startWidth + (me.clientX - startX), 800)));
+                          const handleMouseUp = () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+                          document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp);
+                      }}
+                  />
+              </div>
+          )}
+
+          {/* 3. PRIMARY SIDEBAR (Mobile Responsive & Collapsible) */}
+          <div 
+              className={`transition-all duration-75 shrink-0 bg-[var(--bg-panel)] flex flex-col z-40 overflow-hidden shadow-2xl md:shadow-none hover:border-[var(--solar-cyan)] relative group
+              ${activeActivity ? 'absolute inset-y-0 left-12 md:relative md:left-0 border-r border-[var(--border-subtle)] opacity-100' : 'border-none opacity-0'}`}
+              style={{ width: activeActivity ? (window.innerWidth < 768 ? 'calc(100% - 3rem)' : leftWidth) : 0 }}
+          >
+              <div className="w-full h-full flex flex-col relative">
+                  {/* Resizer Handle */}
+                  <div 
+                      className="absolute -right-1 top-0 bottom-0 w-2 cursor-col-resize z-50 hover:bg-[var(--solar-cyan)]/50 transition-colors hidden md:block"
+                      onMouseDown={(e) => {
+                          e.preventDefault();
+                          const startX = e.clientX;
+                          const startWidth = leftWidth;
+                          const handleMouseMove = (me: MouseEvent) => setLeftWidth(Math.max(200, Math.min(startWidth + (me.clientX - startX), 600)));
+                          const handleMouseUp = () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+                          document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp);
+                      }}
+                  />
+                  
+                  {activeActivity === 'cad' ? (
+                      <StudioSidebar 
+                          activeProject={activeProject} 
+                          onSwitchProject={handleProjectSwitch}
+                          onExport={() => engineRef.current?.exportForBlender()}
+                          genConfig={genConfig}
+                          onUpdateGenConfig={handleUpdateGenConfig}
+                          sceneConfig={sceneConfig}
+                          onUpdateSceneConfig={(cfg) => setSceneConfig(prev => ({ ...prev, ...cfg }))}
+                          onSpawnModel={handleSpawnModel}
+                          customAssets={customAssets}
+                          onAddCustomAsset={handleAddCustomAsset}
+                          onRemoveCustomAsset={handleRemoveCustomAsset}
+                          isEmbedded={true}
+                      />
+                  ) : activeActivity === 'files' ? (
+                      <LocalExplorer onFileSelect={(file) => {
+                          // Snapshot content at open time as the diff baseline
+                          setActiveFile({ ...file, originalContent: file.content });
+                          setActiveTab('code');
+                      }}/>
+                  ) : activeActivity === 'mcps' ? (
+                      <ExtensionsPanel onToolSelect={(tool: any) => {
+                          const content = tool.schema || JSON.stringify(tool, null, 2);
+                          setActiveFile({ name: tool.mcp_name + '.json', content, originalContent: content });
+                          setActiveTab('code');
+                      }} />
+                  ) : activeActivity === 'settings' ? (
+                      <SettingsPanel
+                          onClose={() => setActiveActivity(null)}
+                          onFileSelect={(file) => {
+                              setActiveFile({ ...file, originalContent: file.content });
+                              setActiveTab('code');
+                          }}
+                      />
+                  ) : (
+                      <div className="p-4 text-xs text-[var(--text-muted)]">Panel empty.</div>
+                  )}
+              </div>
+          </div>
+
+          {/* 4. MAIN EDITOR AREA */}
+          <div className="flex-1 flex flex-col min-w-0 bg-[var(--bg-app)] relative">
+              {/* Editor Tabs */}
+              <div className="h-10 flex items-center shrink-0 pl-0 relative z-10">
+                  <Tab 
+                      title="Welcome" 
+                      icon={<Sparkles size={14} className="text-[var(--solar-cyan)]"/>} 
+                      active={activeTab === 'welcome'} 
+                      onClick={() => setActiveTab('welcome')} 
+                  />
+                  <Tab 
+                      title={activeFile ? `${activeFile.name}${isDirty ? ' ●' : ''}` : 'Untitled.ts'} 
+                      icon={<LayoutTemplate size={14} className={activeFile ? 'text-[var(--solar-yellow)]' : 'text-[var(--text-muted)]'}/>} 
+                      active={activeTab === 'code'} 
+                      onClick={() => setActiveTab('code')} 
+                  />
+                  <Tab 
+                      title="Voxel Preview (Live)" 
+                      icon={<Box size={14} className="text-[var(--solar-magenta)]"/>} 
+                      active={activeTab === 'engine'} 
+                      onClick={() => setActiveTab('engine')} 
+                  />
+                  <Tab 
+                      title="Browser Preview" 
+                      icon={<Globe size={14} className="text-[var(--solar-blue)]"/>} 
+                      active={activeTab === 'browser'} 
+                      onClick={() => setActiveTab('browser')} 
+                  />
+                  <Tab 
+                      title="GLB Viewport" 
+                      icon={<Box size={14} className="text-[var(--solar-green)]"/>} 
+                      active={activeTab === 'glb'} 
+                      onClick={() => setActiveTab('glb')} 
+                  />
+                  
+                  {/* Decorative line below tabs */}
+                  <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-[var(--border-subtle)] z-[-1]" />
+              </div>
+
+              {/* Editor Content Box */}
+              <div className="flex-1 relative overflow-hidden flex flex-col">
+                  
+                  {/* 3D CANVAS MOUNT - Permanently in DOM to avoid WebGL context loss */}
+                  <div 
+                      ref={containerRef} 
+                      className={`absolute inset-0 z-0 transition-opacity duration-300 ${activeTab === 'engine' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+                      style={{ background: 'var(--scene-bg)' }}
+                  />
+                  
+                  {activeTab === 'welcome' && (
+                      <div className="absolute inset-0 z-10">
+                          <WelcomeLauncher onOpenFolder={() => setActiveActivity('files')} />
+                      </div>
+                  )}
+
+                  {activeTab === 'engine' && (
+                      <div className="relative z-10 w-full h-full pointer-events-none flex flex-col justify-end pb-8">
+                          <ToolLauncherBar onNavigate={(url) => {
+                              setBrowserUrl(url);
+                              setActiveTab('browser');
+                          }} />
+                      </div>
+                  )}
+
+                  {activeTab === 'code' && (
+                      <div className="absolute inset-0 z-10">
+                          <MonacoEditorView
+                              fileData={activeFile}
+                              isDirty={isDirty}
+                              onSave={handleSaveFile}
+                              onChange={(val) => {
+                                  if (activeFile && val !== undefined) {
+                                      setActiveFile(prev => prev ? {
+                                          ...prev,
+                                          content: val,
+                                          // Set originalContent on first edit if not yet set
+                                          originalContent: prev.originalContent ?? prev.content
+                                      } : null);
+                                  }
+                              }}
+                          />
+                      </div>
+                  )}
+                  {activeTab === 'browser' && (
+                      <div className="absolute inset-0 z-10 overflow-hidden">
+                          <BrowserView initialUrl={browserUrl} />
+                      </div>
+                  )}
+
+                  {activeTab === 'glb' && (
+                      <div className="absolute inset-0 z-10 overflow-hidden">
+                          <GLBViewer url="https://imagedelivery.net/g7wf09fCONpnidkRnR_5vw/6454d6fa-d4f1-43ec-33fd-628d0e7cdb00/public" filename="Meshy_AI_Jet.glb" />
+                      </div>
+                  )}
+              </div>
+
+              {/* 7. Bottom Terminal Drawer */}
+              {isTerminalOpen && <XTermShell ref={terminalRef} onClose={() => setIsTerminalOpen(false)} />}
+          </div>
+
+          {/* 6. Optional Right Agent Panel */}
+          {agentPosition === 'right' && (
+              <div 
+                  className="bg-[var(--bg-panel)] flex flex-col shrink-0 transition-opacity z-30 relative group opacity-100"
+                  style={{ width: rightWidth, borderLeft: '1px solid var(--border-subtle)' }}
+              >
+                  <div className="h-10 border-b border-[var(--border-subtle)] flex items-center px-4 font-semibold text-[11px] tracking-widest uppercase text-[var(--text-muted)] shrink-0">Agent</div>
+                  <div className="flex-1 relative overflow-hidden">
+                       <ChatAssistant 
+                          activeProject={activeProject} 
+                          activeFileContent={activeFile?.content}
+                          activeFileName={activeFile?.name}
+                          messages={chatMessages} 
+                          setMessages={setChatMessages} 
+                          onFileSelect={(file) => {
+                              setActiveFile({ ...file, originalContent: '' });
+                              setActiveTab('code');
+                          }}
+                          onRunInTerminal={runInTerminal}
+                       />
+                  </div>
+
+                  {/* Resizer Handle */}
+                  <div 
+                      className="absolute -left-1 top-0 bottom-0 w-2 cursor-col-resize z-50 hover:bg-[var(--solar-cyan)]/50 transition-colors"
+                      onMouseDown={(e) => {
+                          e.preventDefault();
+                          const startX = e.clientX;
+                          const startWidth = rightWidth;
+                          const handleMouseMove = (me: MouseEvent) => setRightWidth(Math.max(250, Math.min(startWidth - (me.clientX - startX), 800)));
+                          const handleMouseUp = () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+                          document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp);
+                      }}
+                  />
+              </div>
+          )}
+      </div>
+      
+      {/* 8. Global Status Bar Overlay */}
+      <StatusBar activeTab={activeTab === 'engine' ? 'Sandbox' : activeTab === 'code' ? 'TypeScript' : 'Preview' } />
+    </div>
+  );
+};
+
+// --- Helper UI Components ---
+const ActivityIcon: React.FC<{ icon: any, active: boolean, onClick: () => void, title?: string }> = ({ icon: Icon, active, onClick, title }) => (
+    <div 
+        onClick={onClick}
+        title={title}
+        className={`p-3 cursor-pointer transition-colors relative ${active ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
+    >
+        {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-9 bg-[var(--solar-cyan)] rounded-r-md"></div>}
+        <Icon size={25} strokeWidth={1} />
+    </div>
+);
+
+const Tab: React.FC<{ title: string, icon: React.ReactNode, active: boolean, onClick: () => void }> = ({ title, icon, active, onClick }) => (
+    <div 
+        onClick={onClick}
+        className={`h-full flex items-center gap-2 px-4 text-[13px] select-none cursor-pointer border-r border-[var(--border-subtle)] relative ${active ? 'bg-[var(--bg-app)] text-[var(--solar-cyan)]' : 'bg-[var(--bg-panel)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]'}`}
+    >
+        {active && <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--solar-cyan)]" />}
+        {icon}
+        {title}
+        {!active && <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-[var(--border-subtle)]" />}
+    </div>
+);
+
+export default App;
