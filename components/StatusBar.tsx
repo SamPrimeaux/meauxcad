@@ -1,5 +1,6 @@
 import React from 'react';
 import { GitBranch, XCircle, AlertTriangle, Bell, Check } from 'lucide-react';
+import { SHELL_VERSION } from '../src/shellVersion';
 
 interface StatusBarProps {
     branch?: string;
@@ -20,7 +21,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     line = 10448,
     col = 30,
     activeTab = 'JavaScript',
-    version = '1.1.0'
+    version = SHELL_VERSION
 }) => {
     return (
         <div className="h-6 bg-[#002b36] border-t border-[var(--border-subtle)]/30 w-full flex items-center justify-between text-[11px] font-mono text-white/80 shrink-0 z-[100] relative">

@@ -26,6 +26,7 @@ import { GoogleDriveExplorer } from './components/GoogleDriveExplorer';
 import { PlaywrightConsole } from './components/PlaywrightConsole';
 import { MCPPanel } from './components/MCPPanel';
 import { ProjectType, AppState, GameEntity, GenerationConfig, ArtStyle, SceneConfig, CADTool, CustomAsset, CADPlane } from './types';
+import { SHELL_VERSION } from './src/shellVersion';
 import { Sparkles, Files, Search, GitBranch, PlayCircle, Blocks, Box, Settings, PanelLeftClose, PanelRightClose, Terminal as TermIcon, LayoutTemplate, Network, Layers, Monitor, ChevronDown, Bug, Github, Database, FolderOpen, Globe, PenTool, Cloud, X as XIcon, Columns2, PanelBottom } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -777,7 +778,7 @@ const App: React.FC = () => {
       </div>
       
       {/* 8. Global Status Bar Overlay */}
-      <StatusBar activeTab={activeTab === 'engine' ? 'Sandbox' : activeTab === 'code' ? 'TypeScript' : 'Preview' } version="1.1.0" />
+      <StatusBar activeTab={activeTab === 'engine' ? 'Sandbox' : activeTab === 'code' ? 'TypeScript' : 'Preview' } version={SHELL_VERSION} />
     </div>
   );
 };

@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { X, ExternalLink, ChevronDown, ChevronUp, Radio, Wifi, Plus, TriangleAlert, CircleCheck } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
+import { SHELL_VERSION } from '../src/shellVersion';
 
 // ── Public handle the parent can hold via ref ────────────────────────────────
 export interface XTermShellHandle {
@@ -132,7 +133,7 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
       setTimeout(() => fitAddon.fit(), 50);
 
       term.writeln('');
-      term.writeln('\x1b[1;36m  IAM Terminal (AITestSuite)\x1b[0m \x1b[2m— xterm + IAM shell tokens\x1b[0m');
+      term.writeln(`\x1b[1;36m  IAM Terminal (AITestSuite)\x1b[0m \x1b[2m— shell ${SHELL_VERSION} · xterm + IAM tokens\x1b[0m`);
       term.writeln(`\x1b[2m  Shell CSS: ${iamOrigin}/static/dashboard/shell.css\x1b[0m`);
       term.writeln(`\x1b[2m  Prod bridge (pt 2/3): ${iamOrigin}/api/agent/terminal/ws (session cookie)\x1b[0m`);
       term.writeln('\x1b[2m  Local echo until tunnel / inneranimal-dashboard integration.\x1b[0m');

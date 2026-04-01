@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import type { R2Bucket, D1Database, Fetcher, ExecutionContext, DurableObjectNamespace } from "@cloudflare/workers-types";
 import { MeauxCADSession } from "./src/MeauxCADSession";
+import { SHELL_VERSION } from "./src/shellVersion";
 
 export interface Env {
   GEMINI_API_KEY: string;
@@ -14,7 +15,7 @@ export interface Env {
   MCP_AUTH_TOKEN: string;
 }
 
-const VERSION = "1.1.0"; // Integration v1.1: DB GUI + Drive Prep
+const VERSION = SHELL_VERSION;
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
