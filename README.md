@@ -28,6 +28,12 @@ MeauxCAD Studio is a desktop-style IDE built on the Cloudflare stack (Workers, D
 
 **Cloudflare Workers Builds** (optional): connect this repository to the `aitestsuite` Worker with branch `main`, build command `npm run build`, deploy `npx wrangler deploy`. Keep `wrangler.jsonc` `name` aligned with the Worker name (`aitestsuite`).
 
+### Versioning (shell `v` and cache `?v=`)
+
+- **Display version** (status bar, terminal banner, Worker JSON): `src/shellVersion.ts` exports `SHELL_VERSION`. Keep it in sync with **`package.json` `version`** (semver).
+- **Every deploy:** run `npm run deploy`, which runs `scripts/bump-cache.js` then `vite build` then `wrangler deploy`. The bump script sets `index.html` asset query strings to `?v=<semver>-<unix_ms>` so browsers always fetch fresh chunks after a version bump.
+- **D1 CIDI audit:** after a meaningful deploy, apply the matching migration in the IAM monorepo (`migrations/207_*` for AITestSuite) so `cidi_pipeline_runs` / `cidi_run_results` / `cidi_activity_log` / `cicd_runs` stay aligned (see `docs/CIDI_TABLES_AND_MIGRATIONS.md` there).
+
 ---
 
 ## Features
