@@ -24,6 +24,90 @@ const VERSION = SHELL_VERSION;
 const LAB_WRITE_PREFIX = 'aitestsuite/lab/';
 const MAX_CAT_BYTES = 256 * 1024;
 const MAX_LIST = 200;
+const DEFAULT_CHAT_MODEL = 'gemini-3-flash-preview';
+
+function sanitizeModelId(raw: string | undefined): string {
+  if (!raw || typeof raw !== 'string') return DEFAULT_CHAT_MODEL;
+  const trimmed = raw.trim();
+  if (trimmed.length > 120 || !/^[a-zA-Z0-9@._/-]+$/.test(trimmed)) return DEFAULT_CHAT_MODEL;
+  return trimmed;
+}
+
+function guessOutputFileFromAssistant(text: string): string | null {
+  const m = /```(\w+)?\r?\n/.exec(text);
+  if (!m) return null;
+  const lang = (m[1] || 'txt').toLowerCase();
+  const ext = ['tsx', 'ts', 'jsx', 'js', 'css', 'html', 'json', 'md', 'py', 'sh', 'txt'].includes(lang) ? lang : 'txt';
+  return `agent_output.${ext}`;
+}
+
+function sumMessageChars(messages: { content?: string }[]): number {
+  return messages.reduce((acc, m) => acc + (typeof m.content === 'string' ? m.content.length : 0), 0);
+}
+
+function insertAiApiTestRunChat(
+  env: Env,
+  ctx: ExecutionContext,
+  row: {
+    id: string;
+    model: string;
+    latencyMs: number;
+    success: boolean;
+    errorMessage: string;
+    requestPayloadJson: string;
+    responseText: string;
+    structuredJson: string;
+    inputTokens: number;
+    outputTokens: number;
+    cachedTokens: number;
+    totalTokens: number;
+    startedAt: string;
+    completedAt: string;
+  }
+) {
+  const status = row.success ? 'succeeded' : 'failed';
+  const http = row.success ? 200 : 500;
+  const ok = row.success ? 1 : 0;
+  ctx.waitUntil(
+    env.DB.prepare(
+      `INSERT INTO ai_api_test_runs (
+        id, test_suite, test_name, mode, provider, model,
+        status, http_status, success, error_message,
+        request_payload_json, response_text, structured_output_json,
+        input_tokens, output_tokens, cached_tokens, total_tokens,
+        latency_ms, started_at, completed_at,
+        endpoint, notes, tenant_id
+      ) VALUES (
+        ?, 'aitestsuite', 'chat_stream', 'stream', 'google', ?,
+        ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?,
+        '/api/chat', 'meauxcad /api/chat', 'tenant_sam_primeaux'
+      )`
+    )
+      .bind(
+        row.id,
+        row.model,
+        status,
+        http,
+        ok,
+        row.errorMessage.slice(0, 2000),
+        row.requestPayloadJson.slice(0, 8000),
+        row.responseText.slice(0, 12000),
+        row.structuredJson.slice(0, 8000),
+        row.inputTokens,
+        row.outputTokens,
+        row.cachedTokens,
+        row.totalTokens,
+        row.latencyMs,
+        row.startedAt,
+        row.completedAt
+      )
+      .run()
+      .catch((e: unknown) => console.error('[ai_api_test_runs]', e))
+  );
+}
 
 function r2FromAlias(env: Env, alias: string): R2Bucket | null {
   const a = alias.toLowerCase();
@@ -223,54 +307,145 @@ export default {
 
     if (request.method === 'POST' && url.pathname === '/api/chat') {
       try {
-        const body = await request.json() as { messages: any[], contextMode: string, contextCode?: string };
+        const body = await request.json() as {
+          messages: { role: string; content: string }[];
+          contextMode: string;
+          contextCode?: string;
+          contextFile?: string;
+          model?: string;
+          output_file?: string;
+        };
+        const modelId = sanitizeModelId(body.model);
         const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
-        
+
         let systemPrompt = `You are the Meaaux Studio Assistant, an IDE-embedded AI specialized in Web Development, 3D Voxel Engine engineering, and React code generation.\nCurrent Studio Mode: ${body.contextMode}\n`;
-        
+
         if (body.contextCode) {
-            systemPrompt += `\n\nTHE USER IS CURRENTLY VIEWING THIS FILE IN THEIR MONACO EDITOR:\n\`\`\`\n${body.contextCode}\n\`\`\`\nAnswer their questions with this code context in mind constraints unless they change topics.`;
+          systemPrompt += `\n\nTHE USER IS CURRENTLY VIEWING THIS FILE IN THEIR MONACO EDITOR:\n\`\`\`\n${body.contextCode}\n\`\`\`\nAnswer their questions with this code context in mind constraints unless they change topics.`;
         }
 
-        // Map messages to Gemini's format
-        const history = body.messages.filter(m => m.role !== 'system').map(m => ({
-            role: m.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: m.content }]
+        const inputChars = systemPrompt.length + sumMessageChars(body.messages ?? []);
+
+        const history = body.messages.filter((m) => m.role !== 'system').map((m) => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }],
         }));
-        
-        // Isolate the final message as the prompt, remainder as history
+
         const promptMsg = history.pop();
-        
+
         const chat = ai.chats.create({
-            model: 'gemini-3-flash-preview',
-            config: { systemInstruction: systemPrompt },
-            history: history
+          model: modelId,
+          config: { systemInstruction: systemPrompt },
+          history: history,
         });
+
+        const runId = crypto.randomUUID();
+        const t0 = Date.now();
 
         const resultStream = await chat.sendMessageStream({ message: promptMsg!.parts[0].text });
 
-        return new Response(new ReadableStream({
+        return new Response(
+          new ReadableStream({
             async start(controller) {
-                const encoder = new TextEncoder();
-                try {
-                    for await (const chunk of resultStream) {
-                        const data = { text: chunk.text };
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-                    }
-                    controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
-                } catch (e: any) {
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: e.message })}\n\n`));
-                } finally {
-                    controller.close();
+              const encoder = new TextEncoder();
+              const startedAt = new Date(t0).toISOString();
+              let fullAssistant = '';
+              let lastUsage: {
+                promptTokenCount?: number;
+                candidatesTokenCount?: number;
+                totalTokenCount?: number;
+                cachedContentTokenCount?: number;
+              } | null = null;
+              try {
+                for await (const chunk of resultStream) {
+                  const c = chunk as { text?: string; usageMetadata?: typeof lastUsage };
+                  const piece = c.text ?? '';
+                  if (piece) {
+                    fullAssistant += piece;
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: piece })}\n\n`));
+                  }
+                  if (c.usageMetadata) lastUsage = c.usageMetadata;
                 }
-            }
-        }), {
-          headers: { 
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive'
+                controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+
+                const latencyMs = Date.now() - t0;
+                const completedAt = new Date().toISOString();
+                const outFile =
+                  (typeof body.output_file === 'string' && body.output_file.trim().length > 0
+                    ? body.output_file.trim().slice(0, 512)
+                    : null) ?? guessOutputFileFromAssistant(fullAssistant);
+                const ctxFile =
+                  typeof body.contextFile === 'string' && body.contextFile.trim().length > 0
+                    ? body.contextFile.trim().slice(0, 512)
+                    : null;
+
+                const reqJson = JSON.stringify({
+                  contextMode: body.contextMode,
+                  contextFile: body.contextFile ?? null,
+                  model: modelId,
+                });
+                const structJson = JSON.stringify({
+                  output_file: outFile,
+                  context_file: ctxFile,
+                  input_chars: inputChars,
+                  output_chars: fullAssistant.length,
+                });
+
+                insertAiApiTestRunChat(env, ctx, {
+                  id: runId,
+                  model: modelId,
+                  latencyMs,
+                  success: true,
+                  errorMessage: '',
+                  requestPayloadJson: reqJson,
+                  responseText: fullAssistant,
+                  structuredJson: structJson,
+                  inputTokens: lastUsage?.promptTokenCount ?? 0,
+                  outputTokens: lastUsage?.candidatesTokenCount ?? 0,
+                  cachedTokens: lastUsage?.cachedContentTokenCount ?? 0,
+                  totalTokens: lastUsage?.totalTokenCount ?? 0,
+                  startedAt,
+                  completedAt,
+                });
+              } catch (e: any) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: e.message })}\n\n`));
+                const latencyMs = Date.now() - t0;
+                insertAiApiTestRunChat(env, ctx, {
+                  id: runId,
+                  model: modelId,
+                  latencyMs,
+                  success: false,
+                  errorMessage: e?.message ?? String(e),
+                  requestPayloadJson: JSON.stringify({
+                    contextMode: body.contextMode,
+                    contextFile: body.contextFile ?? null,
+                    model: modelId,
+                  }),
+                  responseText: '',
+                  structuredJson: JSON.stringify({
+                    input_chars: inputChars,
+                    partial_response_chars: fullAssistant.length,
+                  }),
+                  inputTokens: 0,
+                  outputTokens: 0,
+                  cachedTokens: 0,
+                  totalTokens: 0,
+                  startedAt,
+                  completedAt: new Date().toISOString(),
+                });
+              } finally {
+                controller.close();
+              }
+            },
+          }),
+          {
+            headers: {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              Connection: 'keep-alive',
+            },
           }
-        });
+        );
       } catch (err: any) {
         return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
       }
@@ -305,6 +480,7 @@ export default {
       try {
         // Return structured elite model list with multimodal caps
         const eliteModels = [
+          { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash (AITestSuite)', type: 'LLM', status: 100 },
           { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro (Elite)', type: 'LLM', status: 100 },
           { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash (Fast)', type: 'LLM', status: 90 },
           { id: 'imagen-3', name: 'Imagen-3 (Creative)', type: 'IMAGE', status: 80 },

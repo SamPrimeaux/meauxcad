@@ -49,7 +49,8 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({ activeProject, act
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [models, setModels] = useState<{id: string, name: string}[]>([]);
-  const [selectedModel, setSelectedModel] = useState<string>('Gemini 1.5 Pro (Elite)');
+  const [selectedModel, setSelectedModel] = useState<string>('Gemini 3 Flash (AITestSuite)');
+  const [selectedModelId, setSelectedModelId] = useState<string>('gemini-3-flash-preview');
   const [mode, setMode] = useState<string>('Auto');
   const [isModelOpen, setIsModelOpen] = useState(false);
   const [isModeOpen, setIsModeOpen] = useState(false);
@@ -58,10 +59,17 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({ activeProject, act
     fetch('/api/models')
       .then(r => r.json())
       .then(data => {
-         if (Array.isArray(data)) {
-            setModels(data);
-            if (data.length > 0) setSelectedModel(data[0].name);
-         }
+        if (Array.isArray(data) && data.length > 0) {
+          setModels(data);
+          const preferred = data.find((m: { id: string }) => m.id === 'gemini-3-flash-preview');
+          if (preferred) {
+            setSelectedModel(preferred.name);
+            setSelectedModelId(preferred.id);
+          } else {
+            setSelectedModel(data[0].name);
+            setSelectedModelId(data[0].id);
+          }
+        }
       })
       .catch(console.error);
   }, []);
@@ -99,7 +107,8 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({ activeProject, act
               messages: newMessages,
               contextMode: activeProject,
               contextCode: activeFileContent,
-              contextFile: activeFileName
+              contextFile: activeFileName,
+              model: selectedModelId,
           })
       });
       
@@ -352,7 +361,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({ activeProject, act
                 <div className="px-3 py-2 text-[9px] text-[var(--text-muted)] font-black uppercase tracking-widest border-b border-[#1e3e4a]">Compute</div>
                 <div className="p-1 flex flex-col gap-0.5">
                   {models.map(m => (
-                    <button key={m.id} className={`px-3 py-1.5 text-left hover:bg-[#0a2d38] cursor-pointer rounded-lg truncate transition-colors ${selectedModel === m.name ? 'text-[var(--solar-cyan)] bg-[#0a2d38]' : 'text-[var(--text-muted)]'}`} onClick={() => { setSelectedModel(m.name); setIsModelOpen(false); }}>
+                    <button key={m.id} className={`px-3 py-1.5 text-left hover:bg-[#0a2d38] cursor-pointer rounded-lg truncate transition-colors ${selectedModel === m.name ? 'text-[var(--solar-cyan)] bg-[#0a2d38]' : 'text-[var(--text-muted)]'}`} onClick={() => { setSelectedModel(m.name); setSelectedModelId(m.id); setIsModelOpen(false); }}>
                       {m.name}
                     </button>
                   ))}
