@@ -58,8 +58,8 @@ const App: React.FC = () => {
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   /** Layout: optional split editor chrome (reserved for Monaco split view). */
   const [splitLayout, setSplitLayout] = useState(false);
-  /** Bottom auxiliary strip (build / preview hook) — separate from the terminal drawer. */
-  const [auxBottomOpen, setAuxBottomOpen] = useState(false);
+  /** Mirrored from Lab shell for Output tab (build / r2 / help). */
+  const [shellOutputLines, setShellOutputLines] = useState<string[]>([]);
 
   const [ideWorkspace, setIdeWorkspace] = useState<IdeWorkspaceSnapshot>(() => loadWorkspace());
   const [gitBranch] = useState(() => loadGitBranch());
@@ -451,9 +451,12 @@ const App: React.FC = () => {
               </button>
               <button
                   type="button"
-                  title="Toggle bottom auxiliary panel"
-                  className={`p-1.5 rounded transition-colors ${auxBottomOpen ? 'text-[var(--solar-cyan)] bg-[var(--bg-hover)]' : 'text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-hover)]'}`}
-                  onClick={() => setAuxBottomOpen((v) => !v)}
+                  title="Bottom panel: open Lab shell (Output tab for command log)"
+                  className={`p-1.5 rounded transition-colors ${isTerminalOpen ? 'text-[var(--solar-cyan)] bg-[var(--bg-hover)]' : 'text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-hover)]'}`}
+                  onClick={() => {
+                    setIsTerminalOpen(true);
+                    setTimeout(() => terminalRef.current?.setActiveTab('output'), 50);
+                  }}
               >
                   <PanelBottom size={15} strokeWidth={1.75} />
               </button>
@@ -744,29 +747,15 @@ const App: React.FC = () => {
                   )}
                   </div>
 
-                  {auxBottomOpen && (
-                      <div
-                          className="shrink-0 border-t border-[var(--border-subtle)] bg-[var(--bg-panel)] px-3 py-2 flex items-center justify-between gap-2"
-                          role="region"
-                          aria-label="Bottom auxiliary panel"
-                      >
-                          <span className="text-[11px] text-[var(--text-muted)] font-medium uppercase tracking-widest">Bottom panel</span>
-                          <span className="text-[10px] text-[var(--text-muted)] truncate">Preview / build output hook — aligns with IAM dashboard shell</span>
-                          <button
-                              type="button"
-                              className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--solar-cyan)]"
-                              onClick={() => setAuxBottomOpen(false)}
-                          >
-                              Hide
-                          </button>
-                      </div>
-                  )}
-
                   {isTerminalOpen && (
                       <XTermShell
                           ref={terminalRef}
                           onClose={() => setIsTerminalOpen(false)}
                           iamOrigin="https://inneranimalmedia.com"
+                          outputLines={shellOutputLines}
+                          onOutputLine={(line) =>
+                            setShellOutputLines((prev) => [...prev.slice(-250), line])
+                          }
                       />
                   )}
               </div>

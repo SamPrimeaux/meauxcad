@@ -5,20 +5,20 @@ import { X, ExternalLink, ChevronDown, ChevronUp, Radio, Wifi, Plus, TriangleAle
 import '@xterm/xterm/css/xterm.css';
 import { SHELL_VERSION } from '../src/shellVersion';
 
-// ── Public handle the parent can hold via ref ────────────────────────────────
+export type ShellTab = 'terminal' | 'output' | 'problems';
+
 export interface XTermShellHandle {
-  /** Write a line of text into the terminal (printed, not executed) */
   writeToTerminal: (text: string) => void;
-  /** Write a command and simulate it being run */
   runCommand: (cmd: string) => void;
+  setActiveTab: (t: ShellTab) => void;
 }
 
 interface XTermShellProps {
   onClose: () => void;
-  /** Prod dashboard origin — shell.css + future /api/agent/terminal/ws bridge */
   iamOrigin?: string;
   problems?: { file: string; line: number; msg: string; severity: 'error' | 'warning' }[];
   outputLines?: string[];
+  onOutputLine?: (line: string) => void;
 }
 
 function readCssVar(name: string): string {
@@ -30,35 +30,58 @@ const MIN_HEIGHT = 140;
 const MAX_HEIGHT_RATIO = 0.75;
 const DEFAULT_HEIGHT = 280;
 
+async function execLine(line: string): Promise<{ stdout: string; stderr?: string }> {
+  const res = await fetch('/api/shell/exec', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ line }),
+  });
+  if (!res.ok) {
+    return { stdout: '', stderr: `HTTP ${res.status}` };
+  }
+  return (await res.json()) as { stdout: string; stderr?: string };
+}
+
 export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
-  ({ onClose, iamOrigin = 'https://inneranimalmedia.com', problems = [], outputLines = [] }, ref) => {
+  ({ onClose, iamOrigin = 'https://inneranimalmedia.com', problems = [], outputLines = [], onOutputLine }, ref) => {
     const terminalRef = useRef<HTMLDivElement>(null);
     const xtermRef = useRef<Terminal | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
+    const currentLineRef = useRef('');
+    const onOutputLineRef = useRef(onOutputLine);
+    onOutputLineRef.current = onOutputLine;
     const [height, setHeight] = useState(DEFAULT_HEIGHT);
     const [isCollapsed, setIsCollapsed] = useState(false);
-    const [activeTab, setActiveTab] = useState<'terminal' | 'output' | 'problems'>('terminal');
+    const [activeTab, setActiveTabState] = useState<ShellTab>('terminal');
 
-    // ── Expose write / run methods to parent via ref ────────────────────────
     useImperativeHandle(ref, () => ({
       writeToTerminal: (text: string) => {
         if (!xtermRef.current) return;
         setIsCollapsed(false);
-        setActiveTab('terminal');
+        setActiveTabState('terminal');
         xtermRef.current.writeln(`\x1b[2m${text}\x1b[0m`);
         xtermRef.current.write('\x1b[1;32m$\x1b[0m ');
       },
       runCommand: (cmd: string) => {
-        if (!xtermRef.current) return;
+        void (async () => {
+          if (!xtermRef.current) return;
+          setIsCollapsed(false);
+          setActiveTabState('terminal');
+          const term = xtermRef.current;
+          term.writeln(`\x1b[1;32m$\x1b[0m \x1b[1m${cmd}\x1b[0m`);
+          const { stdout, stderr } = await execLine(cmd);
+          if (stdout) term.writeln(stdout);
+          if (stderr && !stderr.includes('[clear]')) term.writeln(`\x1b[31m${stderr}\x1b[0m`);
+          onOutputLineRef.current?.(`$ ${cmd}\n${stdout || ''}${stderr ? '\n' + stderr : ''}`);
+          term.write('\x1b[1;32m$\x1b[0m ');
+        })();
+      },
+      setActiveTab: (t: ShellTab) => {
+        setActiveTabState(t);
         setIsCollapsed(false);
-        setActiveTab('terminal');
-        xtermRef.current.writeln(`\x1b[1;32m$\x1b[0m \x1b[1m${cmd}\x1b[0m`);
-        xtermRef.current.writeln(`\x1b[2m[Command queued — connect a shell via Tunnel to execute]\x1b[0m`);
-        xtermRef.current.write('\x1b[1;32m$\x1b[0m ');
       },
     }));
 
-    // ── Drag handle ─────────────────────────────────────────────────────────
     const handleDragStart = (e: React.MouseEvent) => {
       e.preventDefault();
       const startY = e.clientY;
@@ -78,9 +101,8 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
       document.addEventListener('mouseup', onUp);
     };
 
-    // ── XTerm init ──────────────────────────────────────────────────────────
     useEffect(() => {
-      if (!terminalRef.current || isCollapsed || activeTab !== 'terminal') return;
+      if (!terminalRef.current || isCollapsed) return;
 
       const bg = readCssVar('--scene-bg') || readCssVar('--bg-app');
       const fg = readCssVar('--text-main');
@@ -133,31 +155,46 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
       setTimeout(() => fitAddon.fit(), 50);
 
       term.writeln('');
-      term.writeln(`\x1b[1;36m  IAM Terminal (AITestSuite)\x1b[0m \x1b[2m— shell ${SHELL_VERSION} · xterm + IAM tokens\x1b[0m`);
-      term.writeln(`\x1b[2m  Shell CSS: ${iamOrigin}/static/dashboard/shell.css\x1b[0m`);
-      term.writeln(`\x1b[2m  Prod bridge (pt 2/3): ${iamOrigin}/api/agent/terminal/ws (session cookie)\x1b[0m`);
-      term.writeln('\x1b[2m  Local echo until tunnel / inneranimal-dashboard integration.\x1b[0m');
+      term.writeln(`\x1b[1;36m  IAM Lab shell\x1b[0m \x1b[2m— aitestsuite ${SHELL_VERSION} · type help\x1b[0m`);
+      term.writeln(`\x1b[2m  R2: r2 ls tools code/ | r2 cat tools <key> | writes under ${'aitestsuite/lab/'}\x1b[0m`);
+      term.writeln(`\x1b[2m  Real zsh: inneranimalmedia dashboard terminal (tunnel) or local repo\x1b[0m`);
       term.writeln('');
       term.write('\x1b[1;32m$\x1b[0m ');
 
-      let currentLine = '';
       term.onKey(({ key, domEvent }) => {
         const printable = !domEvent.altKey && !domEvent.ctrlKey && !domEvent.metaKey;
-        if (domEvent.keyCode === 13) { // Enter
-          const cmd = currentLine.trim();
-          currentLine = '';
+        if (domEvent.keyCode === 13) {
+          const cmd = currentLineRef.current.trim();
+          currentLineRef.current = '';
           term.writeln('');
           if (cmd) {
-            term.writeln(`\x1b[2m[${cmd}] — local echo only. Tunnel required for real execution.\x1b[0m`);
+            const low = cmd.toLowerCase();
+            if (low === 'clear' || low === 'cls') {
+              term.clear();
+              term.write('\x1b[1;32m$\x1b[0m ');
+              return;
+            }
+            void (async () => {
+              const { stdout, stderr } = await execLine(cmd);
+              if (stderr && stderr.includes('[clear]')) {
+                term.clear();
+              } else {
+                if (stdout) term.writeln(stdout);
+                if (stderr) term.writeln(`\x1b[31m${stderr}\x1b[0m`);
+              }
+              onOutputLineRef.current?.(`$ ${cmd}\n${stdout || ''}${stderr && !stderr.includes('[clear]') ? '\n' + stderr : ''}`);
+              term.write('\x1b[1;32m$\x1b[0m ');
+            })();
+          } else {
+            term.write('\x1b[1;32m$\x1b[0m ');
           }
-          term.write('\x1b[1;32m$\x1b[0m ');
-        } else if (domEvent.keyCode === 8) { // Backspace
-          if (currentLine.length > 0) {
-            currentLine = currentLine.slice(0, -1);
+        } else if (domEvent.keyCode === 8) {
+          if (currentLineRef.current.length > 0) {
+            currentLineRef.current = currentLineRef.current.slice(0, -1);
             term.write('\b \b');
           }
         } else if (printable) {
-          currentLine += key;
+          currentLineRef.current += key;
           term.write(key);
         }
       });
@@ -166,30 +203,31 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
       fitAddonRef.current = fitAddon;
 
       const onResize = () => setTimeout(() => fitAddonRef.current?.fit(), 50);
+      const ro = new ResizeObserver(() => setTimeout(() => fitAddonRef.current?.fit(), 30));
+      if (terminalRef.current) ro.observe(terminalRef.current.parentElement ?? terminalRef.current);
       window.addEventListener('resize', onResize);
       return () => {
+        ro.disconnect();
         window.removeEventListener('resize', onResize);
         term.dispose();
         xtermRef.current = null;
         fitAddonRef.current = null;
       };
-    }, [isCollapsed, activeTab]);
+    }, [isCollapsed]);
 
-    // Re-fit when height changes
     useEffect(() => {
-      setTimeout(() => fitAddonRef.current?.fit(), 50);
-    }, [height]);
+      setTimeout(() => fitAddonRef.current?.fit(), 80);
+    }, [height, activeTab]);
 
     const tabs = ['terminal', 'output', 'problems'] as const;
-    const errCount = problems.filter(p => p.severity === 'error').length;
-    const warnCount = problems.filter(p => p.severity === 'warning').length;
+    const errCount = problems.filter((p) => p.severity === 'error').length;
+    const warnCount = problems.filter((p) => p.severity === 'warning').length;
 
     return (
       <div
         className="flex flex-col flex-shrink-0 border-t border-[var(--border-subtle)] bg-[var(--bg-app)] z-50 select-none animate-slide-up origin-bottom min-h-0"
         style={{ height: isCollapsed ? 36 : height }}
       >
-        {/* ── Drag Handle Strip ── */}
         {!isCollapsed && (
           <div
             className="w-full h-[5px] flex items-center justify-center cursor-row-resize shrink-0 group hover:bg-[var(--solar-cyan)]/30 transition-colors"
@@ -199,14 +237,16 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
           </div>
         )}
 
-        {/* ── Header Tab Bar ── */}
         <div className="h-9 flex items-center justify-between px-3 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] shrink-0">
-          {/* Tabs */}
           <div className="flex items-center gap-0.5 h-full">
             {tabs.map((t) => (
               <button
                 key={t}
-                onClick={() => { setActiveTab(t); setIsCollapsed(false); }}
+                type="button"
+                onClick={() => {
+                  setActiveTabState(t);
+                  setIsCollapsed(false);
+                }}
                 className={`h-full px-3 text-[11px] font-semibold uppercase tracking-widest transition-colors relative flex items-center gap-1.5 ${
                   activeTab === t && !isCollapsed
                     ? 'text-[var(--text-main)] border-b-2 border-[var(--solar-cyan)]'
@@ -214,8 +254,10 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
                 }`}
               >
                 {t}
-                {t === 'problems' && (errCount + warnCount) > 0 && (
-                  <span className={`text-[9px] px-1 py-0.5 rounded font-bold ${errCount > 0 ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                {t === 'problems' && errCount + warnCount > 0 && (
+                  <span
+                    className={`text-[9px] px-1 py-0.5 rounded font-bold ${errCount > 0 ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'}`}
+                  >
                     {errCount > 0 ? errCount : warnCount}
                   </span>
                 )}
@@ -224,47 +266,46 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
 
             <div className="w-px h-4 bg-[var(--border-subtle)] mx-1" />
 
-            <button
-              className="p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition-colors"
-              title="New Terminal"
-            >
+            <button type="button" className="p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition-colors" title="New Terminal">
               <Plus size={13} />
             </button>
           </div>
 
-          {/* Right controls */}
           <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
-            <button
-              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest opacity-40 cursor-not-allowed border border-[var(--border-subtle)] hover:opacity-60 transition-opacity"
-              title="Tunnel (coming soon)"
-              disabled
+            <a
+              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border border-[var(--border-subtle)] hover:text-[var(--solar-cyan)] hover:border-[var(--solar-cyan)]/50 transition-colors"
+              title="Prod dashboard terminal (session cookie + tunnel)"
+              href={`${iamOrigin}/dashboard/agent`}
+              target="_blank"
+              rel="noreferrer"
             >
               <Radio size={11} />
-              Tunnel
-            </button>
-            <button
-              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest opacity-40 cursor-not-allowed border border-[var(--border-subtle)] hover:opacity-60 transition-opacity"
-              title="WebSocket (coming soon)"
-              disabled
+              IAM
+            </a>
+            <span
+              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest opacity-50 border border-[var(--border-subtle)]"
+              title="This panel uses Worker /api/shell/exec (not WS)"
             >
               <Wifi size={11} />
-              WS
-            </button>
+              Lab
+            </span>
 
             <div className="w-px h-4 bg-[var(--border-subtle)]" />
 
-            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-[var(--bg-hover)] hover:text-[var(--text-main)] transition-colors">
-              zsh <ChevronDown size={10} />
-            </button>
+            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-[var(--bg-hover)] text-[var(--text-muted)]">lab shell</span>
 
-            <button
+            <a
               className="p-1 rounded hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition-colors"
-              title="Open in new tab"
+              title="Open prod dashboard"
+              href={`${iamOrigin}/dashboard/agent`}
+              target="_blank"
+              rel="noreferrer"
             >
               <ExternalLink size={13} />
-            </button>
+            </a>
 
             <button
+              type="button"
               className="p-1 rounded hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition-colors"
               title={isCollapsed ? 'Expand' : 'Collapse'}
               onClick={() => setIsCollapsed(!isCollapsed)}
@@ -272,38 +313,30 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
               {isCollapsed ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </button>
 
-            <button
-              className="p-1 rounded hover:text-white hover:bg-red-500/20 transition-colors"
-              title="Close"
-              onClick={onClose}
-            >
+            <button type="button" className="p-1 rounded hover:text-white hover:bg-red-500/20 transition-colors" title="Close" onClick={onClose}>
               <X size={13} />
             </button>
           </div>
         </div>
 
-        {/* ── Content Area ── */}
         {!isCollapsed && (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            {/* Terminal Tab */}
-            {activeTab === 'terminal' && (
-              <div className="flex-1 min-h-0 overflow-hidden p-1" ref={terminalRef} />
-            )}
+            <div className={`flex-1 min-h-0 overflow-hidden p-1 ${activeTab !== 'terminal' ? 'hidden' : ''}`} ref={terminalRef} />
 
-            {/* Output Tab */}
             {activeTab === 'output' && (
               <div className="flex-1 min-h-0 overflow-y-auto p-3 font-mono text-[12px] leading-relaxed text-[var(--text-muted)] space-y-0.5 custom-scrollbar">
                 {outputLines.length === 0 ? (
-                  <p className="opacity-50 italic">No output yet.</p>
+                  <p className="opacity-50 italic">No output yet. Commands appear here from the Lab shell.</p>
                 ) : (
                   outputLines.map((line, i) => (
-                    <div key={i} className="whitespace-pre-wrap">{line}</div>
+                    <div key={i} className="whitespace-pre-wrap">
+                      {line}
+                    </div>
                   ))
                 )}
               </div>
             )}
 
-            {/* Problems Tab */}
             {activeTab === 'problems' && (
               <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
                 {problems.length === 0 ? (
@@ -312,7 +345,12 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
                   </div>
                 ) : (
                   problems.map((p, i) => (
-                    <div key={i} className={`flex items-start gap-3 px-4 py-2 border-b border-[var(--border-subtle)]/50 text-[12px] hover:bg-[var(--bg-hover)] transition-colors ${p.severity === 'error' ? 'text-red-400' : 'text-yellow-400'}`}>
+                    <div
+                      key={i}
+                      className={`flex items-start gap-3 px-4 py-2 border-b border-[var(--border-subtle)]/50 text-[12px] hover:bg-[var(--bg-hover)] transition-colors ${
+                        p.severity === 'error' ? 'text-red-400' : 'text-yellow-400'
+                      }`}
+                    >
                       <TriangleAlert size={13} className="mt-0.5 shrink-0" />
                       <div>
                         <span className="font-mono text-[var(--text-main)]">{p.file}</span>

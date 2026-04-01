@@ -21,9 +21,149 @@ export interface Env {
 
 const VERSION = SHELL_VERSION;
 
+const LAB_WRITE_PREFIX = 'aitestsuite/lab/';
+const MAX_CAT_BYTES = 256 * 1024;
+const MAX_LIST = 200;
+
+function r2FromAlias(env: Env, alias: string): R2Bucket | null {
+  const a = alias.toLowerCase();
+  if (a === 'tools') return env.TOOLS;
+  if (a === 'sandbox') return env.SANDBOX;
+  if (a === 'cad') return env.CAD_STORAGE;
+  if (a === 'platform') return env.PLATFORM_STORAGE;
+  if (a === 'splineicons' || a === 'spline') return env.SPLINEICONS_STORAGE;
+  return null;
+}
+
+async function execShellLine(line: string, env: Env): Promise<{ stdout: string; stderr?: string }> {
+  const trimmed = line.trim();
+  if (!trimmed) return { stdout: '' };
+
+  const lower = trimmed.toLowerCase();
+  if (lower === 'clear' || lower === 'cls') {
+    return { stdout: '', stderr: '[clear] handled in client' };
+  }
+
+  if (lower === 'help' || lower === '?') {
+    return {
+      stdout: [
+        'IAM Lab shell (Worker) — not a PTY. Buckets: tools, sandbox, cad, platform, splineicons',
+        '  help | version | echo <text>',
+        '  r2 ls <bucket> [prefix]',
+        '  r2 cat <bucket> <key>',
+        '  r2 put <bucket> <key> <base64>   (key must start with ' + LAB_WRITE_PREFIX + ')',
+        '  deploy   (info only — use Git builds or local wrangler)',
+        '',
+      ].join('\n'),
+    };
+  }
+
+  if (lower === 'version' || lower === 'ver') {
+    return { stdout: `aitestsuite shell ${VERSION}` };
+  }
+
+  if (lower.startsWith('echo ')) {
+    return { stdout: trimmed.slice(5) };
+  }
+
+  if (lower === 'deploy') {
+    return {
+      stdout: [
+        'Workers cannot run wrangler CLI in-process.',
+        'Deploy this lab: push to main (Cloudflare Builds) or run locally:',
+        '  npm run deploy',
+        'CIDI gate for the main dashboard: deploy-sandbox.sh then promote-to-prod.sh (inneranimalmedia repo).',
+      ].join('\n'),
+    };
+  }
+
+  const parts = trimmed.split(/\s+/);
+  const head = parts[0].toLowerCase();
+
+  if (head === 'r2' && parts.length >= 2) {
+    const sub = parts[1].toLowerCase();
+    const bucket = r2FromAlias(env, parts[2] || '');
+    if (!bucket) {
+      return { stdout: '', stderr: 'Unknown bucket. Use: tools | sandbox | cad | platform | splineicons' };
+    }
+
+    if (sub === 'ls' || sub === 'list') {
+      const prefix = parts.length > 3 ? parts.slice(3).join(' ') : '';
+      try {
+        const listed = await bucket.list({ prefix: prefix || undefined, limit: MAX_LIST });
+        const lines = listed.objects.map((o) => `${o.key}\t${o.size}\t${o.uploaded?.toISOString?.() ?? ''}`);
+        const truncated = listed.truncated ? '\n[truncated — narrow prefix]' : '';
+        return { stdout: lines.length ? lines.join('\n') + truncated : '(empty)' };
+      } catch (e: any) {
+        return { stdout: '', stderr: e?.message ?? String(e) };
+      }
+    }
+
+    if (sub === 'cat' && parts.length >= 4) {
+      const key = parts.slice(3).join(' ');
+      try {
+        const obj = await bucket.get(key);
+        if (!obj) return { stdout: '', stderr: 'Not found: ' + key };
+        const buf = await obj.arrayBuffer();
+        if (buf.byteLength > MAX_CAT_BYTES) {
+          return { stdout: '', stderr: `Object too large (${buf.byteLength} bytes). Max ${MAX_CAT_BYTES}.` };
+        }
+        const text = new TextDecoder().decode(buf);
+        const looksBinary = /[\x00-\x08\x0e-\x1f]/.test(text.slice(0, 512));
+        if (looksBinary) {
+          return { stdout: '[binary ' + buf.byteLength + ' bytes — not shown as text]' };
+        }
+        return { stdout: text };
+      } catch (e: any) {
+        return { stdout: '', stderr: e?.message ?? String(e) };
+      }
+    }
+
+    if (sub === 'put' && parts.length >= 5) {
+      const key = parts[3];
+      const b64 = parts.slice(4).join('');
+      if (!key.startsWith(LAB_WRITE_PREFIX)) {
+        return {
+          stdout: '',
+          stderr: 'Refused: key must start with ' + LAB_WRITE_PREFIX + ' (lab sandbox for writes).',
+        };
+      }
+      try {
+        const raw = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        await bucket.put(key, raw);
+        return { stdout: 'OK put ' + key + ' (' + raw.byteLength + ' bytes)' };
+      } catch (e: any) {
+        return { stdout: '', stderr: e?.message ?? String(e) };
+      }
+    }
+
+    return { stdout: '', stderr: 'Usage: r2 ls <bucket> [prefix] | r2 cat <bucket> <key> | r2 put <bucket> <key> <base64>' };
+  }
+
+  return {
+    stdout: '',
+    stderr: 'Unknown command. Type help. (PTY / zsh on your Mac: connect inneranimalmedia dashboard terminal + tunnel.)',
+  };
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (request.method === 'POST' && url.pathname === '/api/shell/exec') {
+      try {
+        const { line } = (await request.json()) as { line?: string };
+        const res = await execShellLine(typeof line === 'string' ? line : '', env);
+        return new Response(JSON.stringify(res), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      } catch (e: any) {
+        return new Response(JSON.stringify({ stdout: '', stderr: e?.message ?? String(e) }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    }
 
     if (request.method === 'POST' && url.pathname === '/api/generate') {
       try {
