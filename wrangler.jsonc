@@ -40,8 +40,16 @@
       "bucket_name": "inneranimalmedia-assets"
     },
     {
+      "binding": "SANDBOX",
+      "bucket_name": "agent-sam-sandbox-cidi"
+    },
+    {
       "binding": "SPLINEICONS_STORAGE",
       "bucket_name": "splineicons"
+    },
+    {
+      "binding": "TOOLS",
+      "bucket_name": "tools"
     }
   ],
 

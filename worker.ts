@@ -7,7 +7,11 @@ export interface Env {
   GEMINI_API_KEY: string;
   CAD_STORAGE: R2Bucket;
   PLATFORM_STORAGE: R2Bucket;
+  /** CIDI sandbox dashboard assets (parity with inneranimal-dashboard R2 target). */
+  SANDBOX: R2Bucket;
   SPLINEICONS_STORAGE: R2Bucket;
+  /** Monaco / TOOLS mirror bucket (tools.inneranimalmedia.com). */
+  TOOLS: R2Bucket;
   DB: D1Database;
   ASSETS: Fetcher;
   MCAD_SESSION: DurableObjectNamespace;
