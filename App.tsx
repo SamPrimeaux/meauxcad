@@ -26,7 +26,7 @@ import { GoogleDriveExplorer } from './components/GoogleDriveExplorer';
 import { PlaywrightConsole } from './components/PlaywrightConsole';
 import { MCPPanel } from './components/MCPPanel';
 import { ProjectType, AppState, GameEntity, GenerationConfig, ArtStyle, SceneConfig, CADTool, CustomAsset, CADPlane } from './types';
-import { Sparkles, Files, Search, GitBranch, PlayCircle, Blocks, Box, Settings, PanelLeftClose, PanelRightClose, Terminal as TermIcon, SplitSquareHorizontal, LayoutTemplate, Network, Layers, Monitor, ChevronDown, Bug, Github, Database, FolderOpen, Globe, PenTool, Cloud, X as XIcon } from 'lucide-react';
+import { Sparkles, Files, Search, GitBranch, PlayCircle, Blocks, Box, Settings, PanelLeftClose, PanelRightClose, Terminal as TermIcon, LayoutTemplate, Network, Layers, Monitor, ChevronDown, Bug, Github, Database, FolderOpen, Globe, PenTool, Cloud, X as XIcon, Columns2, PanelBottom } from 'lucide-react';
 
 const App: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -48,6 +48,10 @@ const App: React.FC = () => {
   const [activeActivity, setActiveActivity] = useState<'cad' | 'files' | 'search' | 'mcps' | 'git' | 'debug' | 'remote' | 'actions' | 'sql' | 'projects' | 'settings' | 'drive' | 'playwright' | null>('files');
   const [agentPosition, setAgentPosition] = useState<'right' | 'left' | 'off'>('right');
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  /** Layout: optional split editor chrome (reserved for Monaco split view). */
+  const [splitLayout, setSplitLayout] = useState(false);
+  /** Bottom auxiliary strip (build / preview hook) — separate from the terminal drawer. */
+  const [auxBottomOpen, setAuxBottomOpen] = useState(false);
   // Tabs: only 'welcome' is open by default. Others open on demand and can be closed.
   const [openTabs, setOpenTabs] = useState<TabId[]>(['welcome']);
   const [activeTab, setActiveTab] = useState<TabId>('welcome');
@@ -411,28 +415,39 @@ const App: React.FC = () => {
               </div>
           </div>
 
-          {/* Right Action Icons */}
-          <div className="flex gap-1.5 items-center mr-1 shrink-0">
-              <button 
-                  title="Toggle Agent Side"
-                  className="p-1 px-1.5 text-[var(--text-muted)] hover:text-white rounded transition-colors"
-                  onClick={() => setAgentPosition(p => p === 'right' ? 'left' : p === 'left' ? 'off' : 'right')}
+          {/* Right layout cluster: split | side panel | bottom aux | terminal (IAM shell) */}
+          <div className="flex gap-0.5 items-center mr-1 shrink-0">
+              <button
+                  type="button"
+                  title="Toggle split editor layout"
+                  className={`p-1.5 rounded transition-colors ${splitLayout ? 'text-[var(--solar-cyan)] bg-[var(--bg-hover)]' : 'text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-hover)]'}`}
+                  onClick={() => setSplitLayout((v) => !v)}
               >
-                  {agentPosition === 'left' ? <PanelLeftClose size={15} /> : <PanelRightClose size={15} />}
+                  <Columns2 size={15} strokeWidth={1.75} />
               </button>
-              <button 
-                  title="Settings"
-                  onClick={() => toggleActivity('settings')}
-                  className="p-1 px-1.5 text-[var(--text-muted)] hover:text-white rounded transition-colors"
+              <button
+                  type="button"
+                  title="Toggle agent panel (right / left / hidden)"
+                  className="p-1.5 text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-hover)] rounded transition-colors"
+                  onClick={() => setAgentPosition((p) => (p === 'right' ? 'left' : p === 'left' ? 'off' : 'right'))}
               >
-                  <Settings size={15} />
+                  {agentPosition === 'left' ? <PanelLeftClose size={15} strokeWidth={1.75} /> : <PanelRightClose size={15} strokeWidth={1.75} />}
               </button>
-              <button 
-                  title="Toggle Terminal Drawer (Cmd+J)"
-                  className="p-1 px-1.5 text-[var(--text-muted)] hover:text-white rounded transition-colors"
-                  onClick={() => setIsTerminalOpen(p => !p)}
+              <button
+                  type="button"
+                  title="Toggle bottom auxiliary panel"
+                  className={`p-1.5 rounded transition-colors ${auxBottomOpen ? 'text-[var(--solar-cyan)] bg-[var(--bg-hover)]' : 'text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-hover)]'}`}
+                  onClick={() => setAuxBottomOpen((v) => !v)}
               >
-                  <SplitSquareHorizontal size={15} className={isTerminalOpen ? 'text-[var(--solar-cyan)]' : ''} />
+                  <PanelBottom size={15} strokeWidth={1.75} />
+              </button>
+              <button
+                  type="button"
+                  title="Terminal (Cmd+J)"
+                  className={`p-1.5 rounded transition-colors ${isTerminalOpen ? 'text-[var(--solar-cyan)] bg-[var(--bg-hover)]' : 'text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-hover)]'}`}
+                  onClick={() => setIsTerminalOpen((p) => !p)}
+              >
+                  <TermIcon size={15} strokeWidth={1.75} />
               </button>
           </div>
       </div>
@@ -558,7 +573,7 @@ const App: React.FC = () => {
           </div>
 
           {/* 4. MAIN EDITOR AREA */}
-          <div className="flex-1 flex flex-col min-w-0 bg-[var(--bg-app)] relative">
+          <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-[var(--bg-app)] relative">
               {/* Editor Tabs — lazy, closeable */}
               <div className="h-10 flex items-center shrink-0 pl-0 relative z-10 overflow-x-auto overflow-y-hidden no-scrollbar">
                   {openTabs.includes('welcome') && (
@@ -633,9 +648,9 @@ const App: React.FC = () => {
                   <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-[var(--border-subtle)] z-[-1]" />
               </div>
 
-              {/* Editor Content Box */}
-              <div className="flex-1 relative overflow-hidden flex flex-col">
-                  
+              {/* Editor + optional aux bottom + terminal — flex column so drawer respects drag height */}
+              <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
+                  <div className="flex-1 min-h-0 relative flex flex-col">
                   {/* 3D CANVAS MOUNT - Permanently in DOM to avoid WebGL context loss */}
                   <div 
                       ref={containerRef} 
@@ -659,7 +674,7 @@ const App: React.FC = () => {
                   )}
 
                   {activeTab === 'code' && (
-                      <div className="absolute inset-0 z-10">
+                      <div className="absolute inset-0 z-10" data-editor-split={splitLayout ? 'true' : undefined}>
                           <MonacoEditorView
                               fileData={activeFile}
                               isDirty={isDirty}
@@ -688,16 +703,39 @@ const App: React.FC = () => {
                       </div>
                   )}
 
-                  {/* Excalidraw — flex isolated to prevent layout bleed */}
                   {activeTab === 'excalidraw' && (
-                      <div className="absolute inset-0 z-10" style={{ display: 'flex', flexDirection: 'column' }}>
+                      <div className="absolute inset-0 z-10 flex flex-col">
                           <ExcalidrawView />
                       </div>
                   )}
-              </div>
+                  </div>
 
-              {/* 7. Bottom Terminal Drawer */}
-              {isTerminalOpen && <XTermShell ref={terminalRef} onClose={() => setIsTerminalOpen(false)} />}
+                  {auxBottomOpen && (
+                      <div
+                          className="shrink-0 border-t border-[var(--border-subtle)] bg-[var(--bg-panel)] px-3 py-2 flex items-center justify-between gap-2"
+                          role="region"
+                          aria-label="Bottom auxiliary panel"
+                      >
+                          <span className="text-[11px] text-[var(--text-muted)] font-medium uppercase tracking-widest">Bottom panel</span>
+                          <span className="text-[10px] text-[var(--text-muted)] truncate">Preview / build output hook — aligns with IAM dashboard shell</span>
+                          <button
+                              type="button"
+                              className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--solar-cyan)]"
+                              onClick={() => setAuxBottomOpen(false)}
+                          >
+                              Hide
+                          </button>
+                      </div>
+                  )}
+
+                  {isTerminalOpen && (
+                      <XTermShell
+                          ref={terminalRef}
+                          onClose={() => setIsTerminalOpen(false)}
+                          iamOrigin="https://inneranimalmedia.com"
+                      />
+                  )}
+              </div>
           </div>
 
           {/* 6. Optional Right Agent Panel */}

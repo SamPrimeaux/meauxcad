@@ -14,8 +14,15 @@ export interface XTermShellHandle {
 
 interface XTermShellProps {
   onClose: () => void;
+  /** Prod dashboard origin — shell.css + future /api/agent/terminal/ws bridge */
+  iamOrigin?: string;
   problems?: { file: string; line: number; msg: string; severity: 'error' | 'warning' }[];
   outputLines?: string[];
+}
+
+function readCssVar(name: string): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || '';
 }
 
 const MIN_HEIGHT = 140;
@@ -23,7 +30,7 @@ const MAX_HEIGHT_RATIO = 0.75;
 const DEFAULT_HEIGHT = 280;
 
 export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
-  ({ onClose, problems = [], outputLines = [] }, ref) => {
+  ({ onClose, iamOrigin = 'https://inneranimalmedia.com', problems = [], outputLines = [] }, ref) => {
     const terminalRef = useRef<HTMLDivElement>(null);
     const xtermRef = useRef<Terminal | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
@@ -74,11 +81,17 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
     useEffect(() => {
       if (!terminalRef.current || isCollapsed || activeTab !== 'terminal') return;
 
-      const styles = getComputedStyle(document.documentElement);
-      const bg   = styles.getPropertyValue('--scene-bg').trim()  || '#060e14';
-      const fg   = styles.getPropertyValue('--text-main').trim() || '#839496';
-      const cyan = styles.getPropertyValue('--solar-cyan').trim()|| '#2dd4bf';
-      const sel  = styles.getPropertyValue('--bg-panel').trim()  || '#0a2d38';
+      const bg = readCssVar('--scene-bg') || readCssVar('--bg-app');
+      const fg = readCssVar('--text-main');
+      const cyan = readCssVar('--solar-cyan');
+      const sel = readCssVar('--bg-panel');
+      const red = readCssVar('--solar-red');
+      const green = readCssVar('--solar-green');
+      const yellow = readCssVar('--solar-yellow');
+      const blue = readCssVar('--solar-blue');
+      const magenta = readCssVar('--solar-magenta');
+      const base03 = readCssVar('--solar-base03');
+      const base01 = readCssVar('--solar-base01');
 
       const term = new Terminal({
         theme: {
@@ -86,14 +99,22 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
           foreground: fg,
           cursor: cyan,
           selectionBackground: sel,
-          black: '#002b36',   brightBlack: '#657b83',
-          red: '#dc322f',     brightRed: '#cb4b16',
-          green: '#859900',   brightGreen: '#586e75',
-          yellow: '#b58900',  brightYellow: '#657b83',
-          blue: '#268bd2',    brightBlue: '#839496',
-          magenta: '#d33682', brightMagenta: '#6c71c4',
-          cyan: '#2aa198',    brightCyan: '#93a1a1',
-          white: '#eee8d5',   brightWhite: '#fdf6e3',
+          black: base03,
+          brightBlack: base01,
+          red,
+          brightRed: readCssVar('--solar-orange'),
+          green,
+          brightGreen: readCssVar('--solar-base00'),
+          yellow,
+          brightYellow: base01,
+          blue,
+          brightBlue: fg,
+          magenta,
+          brightMagenta: readCssVar('--solar-violet'),
+          cyan,
+          brightCyan: readCssVar('--solar-base0'),
+          white: readCssVar('--solar-base1'),
+          brightWhite: readCssVar('--solar-base1'),
         },
         fontFamily: '"JetBrains Mono", "Fira Code", Menlo, Monaco, "Courier New", monospace',
         fontSize: 13,
@@ -111,8 +132,10 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
       setTimeout(() => fitAddon.fit(), 50);
 
       term.writeln('');
-      term.writeln('\x1b[1;36m  MeauxCAD Terminal\x1b[0m \x1b[2m— v1 · session active\x1b[0m');
-      term.writeln('\x1b[2m  Connect a tunnel to execute real shell commands\x1b[0m');
+      term.writeln('\x1b[1;36m  IAM Terminal (AITestSuite)\x1b[0m \x1b[2m— xterm + IAM shell tokens\x1b[0m');
+      term.writeln(`\x1b[2m  Shell CSS: ${iamOrigin}/static/dashboard/shell.css\x1b[0m`);
+      term.writeln(`\x1b[2m  Prod bridge (pt 2/3): ${iamOrigin}/api/agent/terminal/ws (session cookie)\x1b[0m`);
+      term.writeln('\x1b[2m  Local echo until tunnel / inneranimal-dashboard integration.\x1b[0m');
       term.writeln('');
       term.write('\x1b[1;32m$\x1b[0m ');
 
@@ -162,8 +185,8 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
 
     return (
       <div
-        className="flex flex-col border-t border-[var(--border-subtle)] bg-[var(--bg-app)] z-50 select-none animate-slide-up origin-bottom"
-        style={{ height: isCollapsed ? 36 : height, flexShrink: 0 }}
+        className="flex flex-col flex-shrink-0 border-t border-[var(--border-subtle)] bg-[var(--bg-app)] z-50 select-none animate-slide-up origin-bottom min-h-0"
+        style={{ height: isCollapsed ? 36 : height }}
       >
         {/* ── Drag Handle Strip ── */}
         {!isCollapsed && (
@@ -260,15 +283,15 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
 
         {/* ── Content Area ── */}
         {!isCollapsed && (
-          <>
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             {/* Terminal Tab */}
             {activeTab === 'terminal' && (
-              <div className="flex-1 overflow-hidden p-1" ref={terminalRef} />
+              <div className="flex-1 min-h-0 overflow-hidden p-1" ref={terminalRef} />
             )}
 
             {/* Output Tab */}
             {activeTab === 'output' && (
-              <div className="flex-1 overflow-y-auto p-3 font-mono text-[12px] leading-relaxed text-[var(--text-muted)] space-y-0.5 custom-scrollbar">
+              <div className="flex-1 min-h-0 overflow-y-auto p-3 font-mono text-[12px] leading-relaxed text-[var(--text-muted)] space-y-0.5 custom-scrollbar">
                 {outputLines.length === 0 ? (
                   <p className="opacity-50 italic">No output yet.</p>
                 ) : (
@@ -281,7 +304,7 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
 
             {/* Problems Tab */}
             {activeTab === 'problems' && (
-              <div className="flex-1 overflow-y-auto custom-scrollbar">
+              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
                 {problems.length === 0 ? (
                   <div className="flex items-center gap-2 p-4 text-[12px] text-[var(--solar-green)]">
                     <CircleCheck size={14} /> No problems detected.
@@ -300,7 +323,7 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
                 )}
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     );

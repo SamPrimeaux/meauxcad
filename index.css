@@ -47,6 +47,9 @@
 body {
     background: var(--bg-app);
     color: var(--text-main);
+    margin: 0;
+    overflow: hidden;
+    font-family: 'Nunito', system-ui, sans-serif;
 }
 
 ::selection {

@@ -4,15 +4,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Voxel Architect</title>
+    <title>IAM Explorer</title>
+    <link rel="preconnect" href="https://inneranimalmedia.com" crossorigin />
+    <link rel="dns-prefetch" href="https://inneranimalmedia.com" />
+    <!-- IAM dashboard shell tokens (shared layout vars; safe alongside app CSS) -->
+    <link rel="stylesheet" href="https://inneranimalmedia.com/static/dashboard/shell.css" crossorigin="anonymous" />
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
     <style>
       body {
         margin: 0;
         overflow: hidden;
         font-family: 'Nunito', sans-serif;
-        background-color: #f0f2f5;
+        background-color: var(--bg-app);
+        color: var(--text-main);
       }
     </style>
   <script type="importmap">
