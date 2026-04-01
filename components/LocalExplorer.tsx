@@ -11,7 +11,9 @@ interface FileNode {
 
 export const LocalExplorer: React.FC<{
     onFileSelect: (fileData: { name: string; content: string; handle: any }) => void;
-}> = ({ onFileSelect }) => {
+    /** Fires when user connects a native folder — drives status bar + persisted workspace. */
+    onWorkspaceRootChange?: (info: { folderName: string }) => void;
+}> = ({ onFileSelect, onWorkspaceRootChange }) => {
     const [rootDir, setRootDir] = useState<FileNode | null>(null);
     const [expandedSections, setExpandedSections] = useState({
         local: true,
@@ -38,6 +40,7 @@ export const LocalExplorer: React.FC<{
                 children: await getEntries(dirHandle)
             };
             setRootDir(root);
+            onWorkspaceRootChange?.({ folderName: root.name });
         } catch (err) {
             console.error('Failed to open directory:', err);
         }

@@ -3,6 +3,8 @@ import { FolderOpen, Github, TerminalSquare, Box, ChevronRight, LayoutTemplate, 
 
 interface WelcomeLauncherProps {
     onOpenFolder: () => void;
+    /** Select a pinned / recent workspace — updates status bar; use Open Folder for real FS. */
+    onWorkspacePick?: (ws: { name: string; path: string }) => void;
 }
 
 const ALL_WORKSPACES = [
@@ -17,7 +19,7 @@ const ALL_WORKSPACES = [
 
 const PINNED_WORKSPACES = ALL_WORKSPACES.slice(0, 3);
 
-export const WelcomeLauncher: React.FC<WelcomeLauncherProps> = ({ onOpenFolder }) => {
+export const WelcomeLauncher: React.FC<WelcomeLauncherProps> = ({ onOpenFolder, onWorkspacePick }) => {
     const [showPopup, setShowPopup] = useState(false);
     const [search, setSearch] = useState('');
 
@@ -68,6 +70,10 @@ export const WelcomeLauncher: React.FC<WelcomeLauncherProps> = ({ onOpenFolder }
                         {PINNED_WORKSPACES.map((ws) => (
                             <div
                                 key={ws.name}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => onWorkspacePick?.({ name: ws.name, path: ws.path })}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onWorkspacePick?.({ name: ws.name, path: ws.path }); } }}
                                 className="w-full border border-[var(--border-subtle)] hover:border-[var(--solar-cyan)]/50 hover:bg-[var(--bg-hover)] transition-all bg-[var(--bg-panel)] rounded-lg p-3 cursor-pointer group flex items-center justify-between"
                             >
                                 <div className="flex items-center gap-2.5">
@@ -146,7 +152,10 @@ export const WelcomeLauncher: React.FC<WelcomeLauncherProps> = ({ onOpenFolder }
                                 filtered.map((ws) => (
                                     <button
                                         key={ws.name}
-                                        onClick={() => setShowPopup(false)}
+                                        onClick={() => {
+                                            onWorkspacePick?.({ name: ws.name, path: ws.path });
+                                            setShowPopup(false);
+                                        }}
                                         className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-[var(--bg-hover)] group transition-colors text-left"
                                     >
                                         <span className={`${ws.color} shrink-0`}>{ws.icon}</span>

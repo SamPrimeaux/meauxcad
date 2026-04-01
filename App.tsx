@@ -27,6 +27,13 @@ import { PlaywrightConsole } from './components/PlaywrightConsole';
 import { MCPPanel } from './components/MCPPanel';
 import { ProjectType, AppState, GameEntity, GenerationConfig, ArtStyle, SceneConfig, CADTool, CustomAsset, CADPlane } from './types';
 import { SHELL_VERSION } from './src/shellVersion';
+import {
+  loadWorkspace,
+  saveWorkspace,
+  loadGitBranch,
+  formatWorkspaceStatusLine,
+  type IdeWorkspaceSnapshot,
+} from './src/ideWorkspace';
 import { Sparkles, Files, Search, GitBranch, PlayCircle, Blocks, Box, Settings, PanelLeftClose, PanelRightClose, Terminal as TermIcon, LayoutTemplate, Network, Layers, Monitor, ChevronDown, Bug, Github, Database, FolderOpen, Globe, PenTool, Cloud, X as XIcon, Columns2, PanelBottom } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -53,6 +60,14 @@ const App: React.FC = () => {
   const [splitLayout, setSplitLayout] = useState(false);
   /** Bottom auxiliary strip (build / preview hook) — separate from the terminal drawer. */
   const [auxBottomOpen, setAuxBottomOpen] = useState(false);
+
+  const [ideWorkspace, setIdeWorkspace] = useState<IdeWorkspaceSnapshot>(() => loadWorkspace());
+  const [gitBranch] = useState(() => loadGitBranch());
+  const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
+
+  useEffect(() => {
+    saveWorkspace(ideWorkspace);
+  }, [ideWorkspace]);
   // Tabs: only 'welcome' is open by default. Others open on demand and can be closed.
   const [openTabs, setOpenTabs] = useState<TabId[]>(['welcome']);
   const [activeTab, setActiveTab] = useState<TabId>('welcome');
@@ -450,6 +465,14 @@ const App: React.FC = () => {
               >
                   <TermIcon size={15} strokeWidth={1.75} />
               </button>
+              <button
+                  type="button"
+                  title="Settings"
+                  className={`p-1.5 rounded transition-colors ${activeActivity === 'settings' ? 'text-[var(--solar-cyan)] bg-[var(--bg-hover)]' : 'text-[var(--text-muted)] hover:text-white hover:bg-[var(--bg-hover)]'}`}
+                  onClick={() => toggleActivity('settings')}
+              >
+                  <Settings size={15} strokeWidth={1.75} />
+              </button>
           </div>
       </div>
 
@@ -544,11 +567,15 @@ const App: React.FC = () => {
                           isEmbedded={true}
                       />
                   ) : activeActivity === 'files' ? (
-                      <LocalExplorer onFileSelect={(file) => {
-                          // Snapshot content at open time as the diff baseline
+                      <LocalExplorer
+                          onWorkspaceRootChange={({ folderName }) => {
+                              setIdeWorkspace({ source: 'local', folderName });
+                          }}
+                          onFileSelect={(file) => {
                           setActiveFile({ ...file, originalContent: file.content });
                           openTab('code');
-                      }}/>
+                      }}
+                      />
                   ) : activeActivity === 'mcps' ? (
                       <MCPPanel />
                   ) : activeActivity === 'settings' ? (
@@ -661,7 +688,12 @@ const App: React.FC = () => {
                   
                   {activeTab === 'welcome' && (
                       <div className="absolute inset-0 z-10">
-                          <WelcomeLauncher onOpenFolder={() => setActiveActivity('files')} />
+                          <WelcomeLauncher
+                              onOpenFolder={() => setActiveActivity('files')}
+                              onWorkspacePick={({ name, path }) => {
+                                  setIdeWorkspace({ source: 'pinned', name, pathHint: path });
+                              }}
+                          />
                       </div>
                   )}
 
@@ -680,6 +712,7 @@ const App: React.FC = () => {
                               fileData={activeFile}
                               isDirty={isDirty}
                               onSave={handleSaveFile}
+                              onCursorPositionChange={(line, col) => setCursorPos({ line, col })}
                               onChange={(val) => {
                                   if (activeFile && val !== undefined) {
                                       setActiveFile(prev => prev ? {
@@ -778,7 +811,21 @@ const App: React.FC = () => {
       </div>
       
       {/* 8. Global Status Bar Overlay */}
-      <StatusBar activeTab={activeTab === 'engine' ? 'Sandbox' : activeTab === 'code' ? 'TypeScript' : 'Preview' } version={SHELL_VERSION} />
+      <StatusBar
+          branch={gitBranch}
+          workspace={formatWorkspaceStatusLine(ideWorkspace)}
+          line={cursorPos.line}
+          col={cursorPos.col}
+          showCursor={activeTab === 'code' && !!activeFile}
+          activeTab={
+            activeTab === 'engine'
+              ? 'Sandbox'
+              : activeTab === 'code'
+                ? (activeFile?.name?.split('.').pop()?.toLowerCase() || 'ts')
+                : 'Preview'
+          }
+          version={SHELL_VERSION}
+      />
     </div>
   );
 };

@@ -16,6 +16,8 @@ interface MonacoEditorViewProps {
   onChange?: (val?: string) => void;
   onSave?: (content: string) => void;
   isDirty?: boolean;
+  /** Live cursor for status bar (IDE parity). */
+  onCursorPositionChange?: (line: number, column: number) => void;
 }
 
 const LANG_MAP: Record<string, string> = {
@@ -101,7 +103,7 @@ const EDITOR_OPTIONS = {
 };
 
 export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
-  fileData, onChange, onSave, isDirty
+  fileData, onChange, onSave, isDirty, onCursorPositionChange
 }) => {
   const monaco = useMonaco();
   const editorRef = useRef<any>(null);
@@ -253,7 +255,17 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
             theme="meauxcad-dark"
             value={fileData.content}
             onChange={onChange}
-            onMount={(editor) => { editorRef.current = editor; }}
+            onMount={(editor) => {
+              editorRef.current = editor;
+              const push = () => {
+                const p = editor.getPosition();
+                if (p && onCursorPositionChange) {
+                  onCursorPositionChange(p.lineNumber, p.column);
+                }
+              };
+              push();
+              editor.onDidChangeCursorPosition(() => push());
+            }}
             options={EDITOR_OPTIONS}
           />
         )}
