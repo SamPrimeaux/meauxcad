@@ -22,6 +22,13 @@ export const ThemeSwitcher: React.FC = () => {
       })
       .catch(console.error);
 
+    // IAM Theme & Color Stubs
+    const stubs = [
+      '/api/colors/all',
+      '/api/themes/apply'
+    ];
+    stubs.forEach(url => console.log('TODO: wire', url));
+
     // Initial active theme from localStorage or default
     const cached = localStorage.getItem('mcad_theme_slug');
     if (cached) setActiveSlug(cached);
@@ -35,7 +42,7 @@ export const ThemeSwitcher: React.FC = () => {
       document.documentElement.style.setProperty(k, v as string);
     });
 
-    // Persist to DB
+    // Persist to DB (Standardized IAM Route)
     fetch('/api/themes/apply', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -44,7 +51,10 @@ export const ThemeSwitcher: React.FC = () => {
         theme_id: theme.id,
         workspace_id: 'meauxcad'
       })
+    }).catch(() => {
+      console.log('TODO: wire PATCH /api/settings/preferences {theme_preset}');
     });
+
 
     // Update state and local storage
     setActiveSlug(theme.slug);

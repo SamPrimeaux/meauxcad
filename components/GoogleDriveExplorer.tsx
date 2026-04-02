@@ -1,13 +1,47 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Cloud, Folder, File, ChevronRight, ChevronDown, 
   Plus, Upload, RefreshCw, MoreVertical, HardDrive, 
-  Github, User, Settings, Lock
+  Github, User, Settings, Lock, Loader2, ExternalLink
 } from 'lucide-react';
 
 export const GoogleDriveExplorer: React.FC = () => {
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [isAuthenticated, setIsAuthenticated] = useState(true); // Default to true since we have real endpoints to check
     const [isExpanded, setIsExpanded] = useState(true);
+    const [files, setFiles] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
+
+    const fetchFiles = async () => {
+      setIsLoading(true);
+      try {
+        const res = await fetch('/api/integrations/google-drive/list');
+        if (!res.ok) throw new Error('Unauthenticated');
+        const data = await res.json();
+        setFiles(data.files || []);
+        setIsAuthenticated(true);
+      } catch (err) {
+        setIsAuthenticated(false);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    useEffect(() => {
+      fetchFiles();
+      
+      // IAM Google Drive Stubs
+      const stubs = [
+        '/api/integrations/google-drive/files',
+        '/api/integrations/google-drive/file',
+        '/api/oauth/google/callback'
+      ];
+      stubs.forEach(url => console.log('TODO: wire', url));
+    }, []);
+
+
+    const handleConnect = () => {
+      window.location.href = '/api/oauth/google/start';
+    };
 
     if (!isAuthenticated) {
         return (
@@ -24,16 +58,10 @@ export const GoogleDriveExplorer: React.FC = () => {
                 </p>
                 <div className="flex flex-col gap-3 w-full max-w-[220px]">
                   <button 
-                    onClick={() => setIsAuthenticated(true)}
+                    onClick={handleConnect}
                     className="flex items-center justify-center gap-2 px-4 py-2 bg-[var(--solar-blue)] border border-[var(--solar-blue)] hover:brightness-110 rounded text-[11px] font-bold text-[#00212b] transition-all"
                   >
-                    <User size={14} /> Authenticate Google
-                  </button>
-                  <div className="flex items-center gap-2 text-[9px] text-[var(--text-muted)] font-black uppercase tracking-widest mt-2 overflow-hidden before:flex-1 before:h-[1px] before:bg-[var(--border-subtle)] after:flex-1 after:h-[1px] after:bg-[var(--border-subtle)]">
-                    OR
-                  </div>
-                  <button className="flex items-center justify-center gap-2 px-4 py-2 bg-[var(--bg-app)] border border-[var(--border-subtle)] hover:border-[var(--solar-cyan)] rounded text-[11px] font-bold transition-all">
-                    <Github size={14} /> Link GitHub Repo
+                    <ExternalLink size={14} /> Connect Google Drive
                   </button>
                 </div>
                 <div className="mt-12 p-3 bg-[var(--bg-app)] border border-[var(--border-subtle)] rounded-lg text-left w-full">
@@ -41,7 +69,7 @@ export const GoogleDriveExplorer: React.FC = () => {
                     <Settings size={12} /> Privacy Note
                   </div>
                   <p className="text-[9px] text-[var(--text-muted)] leading-relaxed">
-                    MeauxCAD only requests access to its own folder using the <strong>drive.file</strong> scope. We never see your other files.
+                    MeauxCAD only requests access to its own folder using the <strong>drive.file</strong> scope.
                   </p>
                 </div>
             </div>
@@ -69,16 +97,16 @@ export const GoogleDriveExplorer: React.FC = () => {
               >
                 {isExpanded ? <ChevronDown size={14} className="text-[var(--text-muted)]" /> : <ChevronRight size={14} className="text-[var(--text-muted)]" />}
                 <Folder size={14} className="text-[var(--solar-yellow)]" />
-                <span className="text-[12px] font-bold truncate">MeauxCAD_Workshop</span>
-                <span className="ml-auto text-[9px] bg-[var(--bg-app)] px-1 rounded opacity-0 group-hover:opacity-100">CLOUD</span>
+                <span className="text-[12px] font-bold truncate">Drive Files</span>
+                {isLoading && <Loader2 size={10} className="animate-spin ml-2 text-[var(--solar-blue)]" />}
               </div>
 
               {isExpanded && (
                 <div className="ml-6 mt-1 flex flex-col gap-0.5 border-l border-[var(--border-subtle)] pl-1">
-                  <FileItem name="App.tsx" type="file" />
-                  <FileItem name="worker.ts" type="file" />
-                  <FileItem name="assets" type="folder" />
-                  <FileItem name="models" type="folder" />
+                  {files.length === 0 && !isLoading && <div className="p-2 text-[10px] text-[var(--text-muted)] italic font-mono space-y-1">No files found.</div>}
+                  {files.map(f => (
+                    <FileItem key={f.id} name={f.name} type={f.mimeType?.includes('folder') ? 'folder' : 'file'} />
+                  ))}
                 </div>
               )}
 

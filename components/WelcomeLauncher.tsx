@@ -28,6 +28,19 @@ export const WelcomeLauncher: React.FC<WelcomeLauncherProps> = ({ onOpenFolder, 
         w.path.toLowerCase().includes(search.toLowerCase())
     );
 
+    useEffect(() => {
+        // IAM Overview & Session Stubs
+        const stubs = [
+            '/api/overview/stats',
+            '/api/overview/recent-activity',
+            '/api/overview/deployments',
+            '/api/agent/sessions',
+            '/api/agentsam/skills'
+        ];
+        stubs.forEach(url => console.log('TODO: wire', url));
+    }, []);
+
+
     return (
         <div className="w-full h-full flex items-center justify-center bg-[var(--bg-app)] text-[var(--text-main)] font-sans overflow-y-auto relative">
             <div className="flex flex-col items-center max-w-lg w-full p-8 animate-in fade-in slide-in-from-bottom-6 duration-500">

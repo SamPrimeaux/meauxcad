@@ -22,7 +22,9 @@ import { StatusBar } from './components/StatusBar';
 import { ExcalidrawView } from './components/ExcalidrawView';
 import { DatabaseBrowser } from './components/DatabaseBrowser';
 import { GitHubActionsPanel } from './components/GitHubActionsPanel';
+import { GitHubExplorer } from './components/GitHubExplorer';
 import { GoogleDriveExplorer } from './components/GoogleDriveExplorer';
+import { R2Explorer } from './components/R2Explorer';
 import { PlaywrightConsole } from './components/PlaywrightConsole';
 import { MCPPanel } from './components/MCPPanel';
 import { ProjectType, AppState, GameEntity, GenerationConfig, ArtStyle, SceneConfig, CADTool, CustomAsset, CADPlane } from './types';
@@ -62,8 +64,44 @@ const App: React.FC = () => {
   const [shellOutputLines, setShellOutputLines] = useState<string[]>([]);
 
   const [ideWorkspace, setIdeWorkspace] = useState<IdeWorkspaceSnapshot>(() => loadWorkspace());
-  const [gitBranch] = useState(() => loadGitBranch());
+  const [gitBranch, setGitBranch] = useState(() => loadGitBranch());
+  const [errorCount, setErrorCount] = useState(0);
+  const [spendCount, setSpendCount] = useState('$0.00');
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
+
+  const fetchLiveStatus = useCallback(async () => {
+    try {
+      // Git Status
+      const gitRes = await fetch('/api/agent/git/status');
+      const gitData = await gitRes.json();
+      if (gitData.branch) setGitBranch(gitData.branch);
+
+      // Problems/Errors
+      const probRes = await fetch('/api/agent/problems');
+      const probData = await probRes.json();
+      if (typeof probData.count === 'number') setErrorCount(probData.count);
+
+      // Spend Summary Stub
+      const spendRes = await fetch('/api/spend/summary');
+      const spendData = await spendRes.json();
+      if (spendData.formatted) setSpendCount(spendData.formatted);
+
+      // IAM Status Stubs
+      ['/api/tunnel/status', '/api/agent/terminal/config-status'].forEach(url => console.log('TODO: wire', url));
+      
+      // Telemetry Stub
+      fetch('/api/agent/telemetry', { method: 'POST', body: JSON.stringify({ event: 'status_poll' }) }).catch(() => {});
+    } catch (err) {
+      console.error("Status polling failed:", err);
+    }
+  }, []);
+
+
+  useEffect(() => {
+    fetchLiveStatus();
+    const interval = setInterval(fetchLiveStatus, 30000);
+    return () => clearInterval(interval);
+  }, [fetchLiveStatus]);
 
   useEffect(() => {
     saveWorkspace(ideWorkspace);
@@ -89,8 +127,31 @@ const App: React.FC = () => {
   };
 
   // Dynamic Layout & Lifted State
-  const [leftWidth, setLeftWidth] = useState(288);
-  const [rightWidth, setRightWidth] = useState(320);
+  // Resizable panels using pointer events
+  const [sidebarW, setSidebarW] = useState(260);
+  const [agentW, setAgentW] = useState(360);
+
+  const startResize = (panel: 'sidebar' | 'agent', e: React.PointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = panel === 'sidebar' ? sidebarW : agentW;
+    
+    const onMove = (pe: PointerEvent) => {
+      const delta = pe.clientX - startX;
+      if (panel === 'sidebar') 
+        setSidebarW(Math.max(180, Math.min(480, startW + delta)));
+      if (panel === 'agent') 
+        setAgentW(Math.max(280, Math.min(600, startW - delta)));
+    };
+    
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
   const [chatMessages, setChatMessages] = useState<{role: 'user' | 'assistant', content: string}[]>([
       { role: 'assistant', content: 'Hi! I\'m your Meaaux Studio Agent. How can I assist with your workspace?' }
   ]);
@@ -501,59 +562,39 @@ const App: React.FC = () => {
 
           {/* Optional Left Agent Panel */}
           {agentPosition === 'left' && (
-              <div 
-                  className="bg-[var(--bg-panel)] flex flex-col shrink-0 transition-opacity relative group z-30 opacity-100 glass-panel"
-                  style={{ width: rightWidth, borderRight: '1px solid var(--border-subtle)' }}
-              >
-                  <div className="h-10 border-b border-[var(--border-subtle)] flex items-center px-4 font-semibold text-[11px] tracking-widest uppercase text-[var(--text-muted)] shrink-0">Agent</div>
-                  <ChatAssistant 
-                      activeProject={activeProject} 
-                      activeFileContent={activeFile?.content}
-                      activeFileName={activeFile?.name}
-                      messages={chatMessages} 
-                      setMessages={setChatMessages} 
-                      onFileSelect={(file) => {
-                          setActiveFile({ ...file, originalContent: '' });
-                          openTab('code');
-                      }}
-                      onRunInTerminal={runInTerminal}
-                  />
-
-                  {/* Resizer Handle */}
-                  <div 
-                      className="absolute -right-1 top-0 bottom-0 w-2 cursor-col-resize z-50 hover:bg-[var(--solar-cyan)]/50 transition-colors glow-border"
-                      onMouseDown={(e) => {
-                          e.preventDefault();
-                          const startX = e.clientX;
-                          const startWidth = rightWidth;
-                          const handleMouseMove = (me: MouseEvent) => setRightWidth(Math.max(250, Math.min(startWidth + (me.clientX - startX), 800)));
-                          const handleMouseUp = () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
-                          document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp);
-                      }}
-                  />
-              </div>
+              <>
+                <div 
+                    className="bg-[var(--bg-panel)] flex flex-col shrink-0 transition-opacity relative group z-30 opacity-100 glass-panel"
+                    style={{ width: agentW, borderRight: '1px solid var(--border-subtle)' }}
+                >
+                    <div className="h-10 border-b border-[var(--border-subtle)] flex items-center px-4 font-semibold text-[11px] tracking-widest uppercase text-[var(--text-muted)] shrink-0">Agent</div>
+                    <ChatAssistant 
+                        activeProject={activeProject} 
+                        activeFileContent={activeFile?.content}
+                        activeFileName={activeFile?.name}
+                        messages={chatMessages} 
+                        setMessages={setChatMessages} 
+                        onFileSelect={(file) => {
+                            setActiveFile({ ...file, originalContent: '' });
+                            openTab('code');
+                        }}
+                        onRunInTerminal={runInTerminal}
+                    />
+                </div>
+                {/* Grab Bar */}
+                <div 
+                  className="w-1 cursor-col-resize hover:bg-[var(--solar-cyan)] active:bg-[var(--solar-cyan)] transition-colors shrink-0 z-50"
+                  onPointerDown={(e) => startResize('agent', e)}
+                />
+              </>
           )}
 
-          {/* 3. PRIMARY SIDEBAR (Mobile Responsive & Collapsible) */}
           <div 
               className={`transition-all duration-75 shrink-0 bg-[var(--bg-panel)] flex flex-col z-40 overflow-hidden shadow-2xl md:shadow-none hover:border-[var(--solar-cyan)] relative group
               ${activeActivity ? 'absolute inset-y-0 left-12 md:relative md:left-0 border-r border-[var(--border-subtle)] opacity-100' : 'border-none opacity-0'} glass-panel`}
-              style={{ width: activeActivity ? (window.innerWidth < 768 ? 'calc(100% - 3rem)' : leftWidth) : 0 }}
+              style={{ width: activeActivity ? (window.innerWidth < 768 ? 'calc(100% - 3rem)' : sidebarW) : 0 }}
           >
-              <div className="w-full h-full flex flex-col relative">
-                  {/* Resizer Handle */}
-                  <div 
-                      className="absolute -right-1 top-0 bottom-0 w-2 cursor-col-resize z-50 hover:bg-[var(--solar-cyan)]/50 transition-colors hidden md:block glow-border"
-                      onMouseDown={(e) => {
-                          e.preventDefault();
-                          const startX = e.clientX;
-                          const startWidth = leftWidth;
-                          const handleMouseMove = (me: MouseEvent) => setLeftWidth(Math.max(200, Math.min(startWidth + (me.clientX - startX), 600)));
-                          const handleMouseUp = () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
-                          document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp);
-                      }}
-                  />
-                  
+              <div className="w-full h-full flex flex-col relative">                  
                   {activeActivity === 'cad' ? (
                       <StudioSidebar 
                           activeProject={activeProject} 
@@ -592,9 +633,11 @@ const App: React.FC = () => {
                   ) : activeActivity === 'sql' ? (
                       <DatabaseBrowser onClose={() => setActiveActivity(null)} />
                   ) : activeActivity === 'actions' ? (
-                      <GitHubActionsPanel onClose={() => setActiveActivity(null)} />
+                      <GitHubExplorer />
                   ) : activeActivity === 'drive' ? (
                       <GoogleDriveExplorer />
+                  ) : activeActivity === 'remote' ? (
+                      <R2Explorer />
                   ) : activeActivity === 'playwright' ? (
                       <PlaywrightConsole />
                   ) : (
@@ -602,6 +645,14 @@ const App: React.FC = () => {
                   )}
               </div>
           </div>
+
+          {/* Sidebar Grab Bar */}
+          {activeActivity && (
+            <div 
+              className="w-1 cursor-col-resize hover:bg-[var(--solar-cyan)] active:bg-[var(--solar-cyan)] transition-colors shrink-0 z-50 hidden md:block"
+              onPointerDown={(e) => startResize('sidebar', e)}
+            />
+          )}
 
           {/* 4. MAIN EDITOR AREA */}
           <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-[var(--bg-app)] relative">
@@ -763,57 +814,53 @@ const App: React.FC = () => {
 
           {/* 6. Optional Right Agent Panel */}
           {agentPosition === 'right' && (
-              <div 
-                  className="bg-[var(--bg-panel)] flex flex-col shrink-0 transition-opacity z-30 relative group opacity-100 glass-panel"
-                  style={{ width: rightWidth, borderLeft: '1px solid var(--border-subtle)' }}
-              >
-                  <div className="h-10 border-b border-[var(--border-subtle)] flex items-center px-4 font-semibold text-[11px] tracking-widest uppercase text-[var(--text-muted)] shrink-0">Agent</div>
-                  <div className="flex-1 relative overflow-hidden">
-                       <ChatAssistant 
-                          activeProject={activeProject} 
-                          activeFileContent={activeFile?.content}
-                          activeFileName={activeFile?.name}
-                          messages={chatMessages} 
-                          setMessages={setChatMessages} 
-                          onFileSelect={(file) => {
-                              setActiveFile({ ...file, originalContent: file.content });
-                              openTab('code');
-                          }}
-                          onRunInTerminal={runInTerminal}
-                       />
-                  </div>
-
-                  {/* Resizer Handle */}
-                  <div 
-                      className="absolute -left-1 top-0 bottom-0 w-2 cursor-col-resize z-50 hover:bg-[var(--solar-cyan)]/50 transition-colors glow-border"
-                      onMouseDown={(e) => {
-                          e.preventDefault();
-                          const startX = e.clientX;
-                          const startWidth = rightWidth;
-                          const handleMouseMove = (me: MouseEvent) => setRightWidth(Math.max(250, Math.min(startWidth - (me.clientX - startX), 800)));
-                          const handleMouseUp = () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
-                          document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp);
-                      }}
-                  />
-              </div>
+              <>
+                {/* Agent Grab Bar */}
+                <div 
+                  className="w-1 cursor-col-resize hover:bg-[var(--solar-cyan)] active:bg-[var(--solar-cyan)] transition-colors shrink-0 z-50"
+                  onPointerDown={(e) => startResize('agent', e)}
+                />
+                <div 
+                    className="bg-[var(--bg-panel)] flex flex-col shrink-0 transition-opacity z-30 relative group opacity-100 glass-panel"
+                    style={{ width: agentW, borderLeft: '1px solid var(--border-subtle)' }}
+                >
+                    <div className="h-10 border-b border-[var(--border-subtle)] flex items-center px-4 font-semibold text-[11px] tracking-widest uppercase text-[var(--text-muted)] shrink-0">Agent</div>
+                    <div className="flex-1 relative overflow-hidden">
+                         <ChatAssistant 
+                            activeProject={activeProject} 
+                            activeFileContent={activeFile?.content}
+                            activeFileName={activeFile?.name}
+                            messages={chatMessages} 
+                            setMessages={setChatMessages} 
+                            onFileSelect={(file) => {
+                                setActiveFile({ ...file, originalContent: file.content });
+                                openTab('code');
+                            }}
+                            onRunInTerminal={runInTerminal}
+                         />
+                    </div>
+                </div>
+              </>
           )}
       </div>
       
-      {/* 8. Global Status Bar Overlay */}
-      <StatusBar
-          branch={gitBranch}
-          workspace={formatWorkspaceStatusLine(ideWorkspace)}
-          line={cursorPos.line}
-          col={cursorPos.col}
-          showCursor={activeTab === 'code' && !!activeFile}
-          activeTab={
+      {/* 8. STATUS BAR (FOOTER) */}
+      <StatusBar 
+        branch={gitBranch}
+        workspace={ideWorkspace.workspace_id || 'No Workspace'}
+        errorCount={errorCount}
+        showCursor={activeTab === 'code'}
+        line={cursorPos.line}
+        col={cursorPos.col}
+        activeTab={
             activeTab === 'engine'
               ? 'Sandbox'
               : activeTab === 'code'
                 ? (activeFile?.name?.split('.').pop()?.toLowerCase() || 'ts')
                 : 'Preview'
-          }
-          version={SHELL_VERSION}
+        }
+        spendCount={spendCount}
+        version={SHELL_VERSION}
       />
     </div>
   );

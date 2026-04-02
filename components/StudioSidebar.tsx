@@ -44,6 +44,19 @@ export const StudioSidebar: React.FC<SidebarProps> = ({
   const [directUrl, setDirectUrl] = useState('');
   const [isAdding, setIsAdding] = useState(false);
 
+  React.useEffect(() => {
+    // IAM Sidebar & Agent Stubs
+    const stubs = [
+      '/api/agent/today-todo',
+      '/api/agent/problems',
+      '/api/agent/git/status',
+      '/api/agent/rules',
+      '/api/notifications'
+    ];
+    stubs.forEach(url => console.log('TODO: wire', url));
+  }, []);
+
+
   const projects = [
     { id: ProjectType.CHESS, name: 'Meaaux Games', icon: <Gamepad2 size={20} />, desc: '3D Physics Chess' },
     { id: ProjectType.CAD, name: 'MeauxCAD', icon: <Layers size={20} />, desc: 'Precision Blueprints' },

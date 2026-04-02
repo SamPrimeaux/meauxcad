@@ -54,6 +54,11 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
           const { url } = await resp.json();
           if (!isMounted || !url) return;
 
+          // IAM Terminal Stubs
+          ['/api/agent/terminal/run', '/api/agent/terminal/complete', '/api/terminal/session/resume', '/api/terminal/session/register', '/api/terminal/assist', '/api/tunnel/restart', '/api/tunnel/status'].forEach(u => {
+            console.log('TODO: wire', u);
+          });
+
           const ws = new WebSocket(url);
           socketRef.current = ws;
 

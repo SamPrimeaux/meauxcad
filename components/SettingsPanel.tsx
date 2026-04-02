@@ -85,7 +85,19 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, onFileSel
     fetch('/api/settings/repos').then(r => r.json()).then((d: GitRepo[]) => {
       if (Array.isArray(d)) setRepos(d);
     }).catch(() => setRepos([]));
+
+    // IAM Settings & Policy Stubs
+    const stubs = [
+      '/api/settings', '/api/settings/preferences', '/api/settings/appearance',
+      '/api/settings/agent-config', '/api/settings/workspaces', 
+      '/api/settings/workspace/default', '/api/settings/emails', '/api/settings/sessions',
+      '/api/agentsam/feature-flags', '/api/agentsam/rules', '/api/agentsam/user-policy',
+      '/api/agentsam/cmd-allowlist', '/api/agentsam/fetch-allowlist',
+      '/api/agentsam/trusted-origins', '/api/agentsam/ignore-patterns'
+    ];
+    stubs.forEach(url => console.log('TODO: wire', url));
   }, []);
+
 
   const toggleMcp = async (id: string, val: boolean) => {
     setMcpToggles(p => ({ ...p, [id]: val }));

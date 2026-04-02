@@ -51,12 +51,22 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({ activeProject, act
   const [models, setModels] = useState<{id: string, name: string}[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('Gemini 3 Flash (AITestSuite)');
   const [selectedModelId, setSelectedModelId] = useState<string>('gemini-3-flash-preview');
+  const [modes, setModes] = useState<string[]>(['Auto', 'Agent', 'Plan', 'Debug', 'Research']);
   const [mode, setMode] = useState<string>('Auto');
   const [isModelOpen, setIsModelOpen] = useState(false);
   const [isModeOpen, setIsModeOpen] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
   useEffect(() => {
-    fetch('/api/models')
+    // Fetch Modes
+    fetch('/api/agent/modes')
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setModes(data); })
+      .catch(console.error);
+    
+    // Fetch Models
+    fetch('/api/agent/models')
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data) && data.length > 0) {
@@ -72,6 +82,23 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({ activeProject, act
         }
       })
       .catch(console.error);
+
+    // IAM Stubs: Registry of future agent endpoints
+    const stubs = [
+      '/api/agent/memory/list',
+      '/api/agent/context-picker/catalog',
+      '/api/agent/notifications',
+      '/api/agent/keyboard-shortcuts',
+      '/api/agent/proposals/pending',
+      '/api/agent/queue',
+      '/api/agent/queue/status',
+      '/api/agent/today-todo',
+      '/api/agent/rules',
+      '/api/agent/sessions'
+    ];
+    stubs.forEach(url => {
+      console.log('TODO: wire', url);
+    });
   }, []);
 
   // Scroll to bottom on new messages
@@ -100,7 +127,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({ activeProject, act
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/api/agent/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -164,6 +191,77 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({ activeProject, act
       setMessages(prev => [...prev, { role: 'assistant', content: "Connection error to Studio Proxy. Please try again." }]);
     } finally {
       setIsLoading(false);
+      console.log('TODO: wire', '/api/agent/telemetry');
+    }
+  };
+
+  /**
+   * IAM Action Stubs for Agent interactions
+   */
+  const executeApprovedTool = async (toolId: string) => {
+    const url = '/api/agent/chat/execute-approved-tool';
+    console.log('TODO: wire', url, { toolId });
+    return { success: true };
+  };
+
+  const managePlan = async (action: 'approve' | 'reject', planId: string) => {
+    const url = `/api/agent/plan/${action}`;
+    console.log('TODO: wire', url, { planId });
+    return { success: true };
+  };
+
+  const proposeChange = async (change: any) => {
+    const url = '/api/agent/propose';
+    console.log('TODO: wire', url, change);
+    return { success: true };
+  };
+
+  const triggerWorkflow = async (workflowId: string) => {
+    const url = '/api/agent/workflows/trigger';
+    console.log('TODO: wire', url, { workflowId });
+    return { success: true };
+  };
+
+  const saveToR2 = async (data: any) => {
+    const url = '/api/agent/r2-save';
+    console.log('TODO: wire', url, data);
+    return { success: true };
+  };
+
+
+  const toggleRecording = async () => {
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (e) => chunks.push(e.data);
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+        const formData = new FormData();
+        formData.append('file', audioBlob, 'recording.webm');
+        
+        try {
+          const res = await fetch('/api/agent/workers-ai/stt', { method: 'POST', body: formData });
+          const data = await res.json();
+          if (data.text) setInput(prev => prev + (prev.endsWith(' ') ? '' : ' ') + data.text);
+        } catch (err) {
+          console.error("STT Failed:", err);
+        }
+        stream.getTracks().forEach(t => t.stop());
+      };
+
+      recorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Mic access denied:", err);
     }
   };
 
@@ -325,52 +423,6 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({ activeProject, act
       {/* ── PREMIUM INPUT FOOTER ────────────────────── */}
       <div className="shrink-0 w-full p-3 bg-[var(--bg-panel)] border-t border-[var(--border-subtle)]">
 
-        {/* Model + Mode selector row */}
-        <div className="flex items-center gap-2 mb-2 px-0.5">
-          {/* Mode pill */}
-          <div className="relative">
-            <button
-              className="flex items-center gap-1 px-2 py-0.5 bg-[var(--bg-app)] border border-[#1e3e4a] hover:border-[var(--solar-cyan)]/50 rounded-md text-[10px] font-mono text-[var(--text-muted)] hover:text-[var(--text-main)] transition-all"
-              onClick={() => { setIsModeOpen(!isModeOpen); setIsModelOpen(false); }}
-            >
-              <span className="text-[var(--solar-cyan)]">∞</span> {mode} <ChevronDown size={8} className="opacity-40" />
-            </button>
-            {isModeOpen && (
-              <div className="absolute bottom-full mb-2 left-0 bg-[#060e14] border border-[#1e3e4a] rounded-xl shadow-2xl p-1 flex flex-col min-w-[130px] text-[11px] z-[100]">
-                {['Auto', 'Agent', 'Plan', 'Debug', 'Research'].map(m => (
-                  <button key={m} className={`px-3 py-1.5 text-left hover:bg-[#0a2d38] cursor-pointer rounded-lg flex items-center justify-between transition-colors ${mode === m ? 'text-[var(--solar-cyan)] bg-[#0a2d38]' : 'text-[var(--text-muted)]'}`} onClick={() => { setMode(m); setIsModeOpen(false); }}>
-                    {m} {mode === m && <span className="opacity-50 text-[9px]">✓</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Model pill */}
-          <div className="relative flex-1 min-w-0">
-            <button
-              className="flex items-center gap-1 px-2 py-0.5 bg-[var(--bg-app)] border border-[#1e3e4a] hover:border-[var(--solar-cyan)]/50 rounded-md text-[10px] font-mono text-[var(--text-muted)] hover:text-[var(--text-main)] transition-all w-full truncate"
-              onClick={() => { setIsModelOpen(!isModelOpen); setIsModeOpen(false); }}
-            >
-              <Sparkles size={9} className="text-[var(--solar-yellow)] shrink-0" />
-              <span className="truncate uppercase tracking-tight">{selectedModel}</span>
-              <ChevronDown size={8} className="opacity-40 shrink-0 ml-auto" />
-            </button>
-            {isModelOpen && (
-              <div className="absolute bottom-full mb-2 left-0 bg-[#060e14] border border-[#1e3e4a] rounded-xl shadow-2xl flex flex-col min-w-[200px] text-[11px] z-[100] max-h-60 overflow-y-auto">
-                <div className="px-3 py-2 text-[9px] text-[var(--text-muted)] font-black uppercase tracking-widest border-b border-[#1e3e4a]">Compute</div>
-                <div className="p-1 flex flex-col gap-0.5">
-                  {models.map(m => (
-                    <button key={m.id} className={`px-3 py-1.5 text-left hover:bg-[#0a2d38] cursor-pointer rounded-lg truncate transition-colors ${selectedModel === m.name ? 'text-[var(--solar-cyan)] bg-[#0a2d38]' : 'text-[var(--text-muted)]'}`} onClick={() => { setSelectedModel(m.name); setSelectedModelId(m.id); setIsModelOpen(false); }}>
-                      {m.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* Input box — premium frosted card */}
         <div className="flex flex-col bg-[#060e14] border border-[#1e3e4a] focus-within:border-[var(--solar-cyan)]/60 rounded-xl transition-all shadow-inner overflow-hidden">
           <textarea
@@ -394,12 +446,56 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({ activeProject, act
               <button className="p-1.5 text-[var(--text-muted)] hover:text-[var(--solar-cyan)] hover:bg-white/5 rounded-lg transition-all" title="Attach file">
                 <Plus size={14} />
               </button>
-              <button className="p-1.5 text-[var(--text-muted)] hover:text-[var(--solar-cyan)] hover:bg-white/5 rounded-lg transition-all" title="Voice input">
+              <button 
+                onClick={toggleRecording}
+                className={`p-1.5 rounded-lg transition-all ${isRecording ? 'text-[var(--solar-red)] bg-[var(--solar-red)]/10 animate-pulse' : 'text-[var(--text-muted)] hover:text-[var(--solar-cyan)] hover:bg-white/5'}`} 
+                title={isRecording ? 'Stop recording...' : 'Voice input'}
+              >
                 <Mic size={14} />
               </button>
+              
+              {/* Discrete Inline Model/Mode Selectors */}
+              <div className="flex items-center gap-1.5 ml-2 border-l border-[#1e3e4a] pl-2">
+                <div className="relative">
+                  <button 
+                    onClick={() => { setIsModelOpen(!isModelOpen); setIsModeOpen(false); }}
+                    className="flex items-center gap-1 text-[9px] font-mono font-bold tracking-tight text-[var(--text-muted)] hover:text-[var(--solar-cyan)] transition-colors uppercase truncate max-w-[100px]"
+                  >
+                    {selectedModel} <ChevronDown size={8} />
+                  </button>
+                  {isModelOpen && (
+                    <div className="absolute bottom-full mb-2 left-0 bg-[#060e14] border border-[#1e3e4a] rounded-xl shadow-2xl flex flex-col min-w-[180px] text-[11px] z-[100] max-h-48 overflow-y-auto p-1">
+                      {models.map(m => (
+                        <button key={m.id} className={`px-3 py-1.5 text-left hover:bg-[#0a2d38] cursor-pointer rounded-lg truncate transition-colors ${selectedModel === m.name ? 'text-[var(--solar-cyan)] bg-[#0a2d38]' : 'text-[var(--text-muted)]'}`} onClick={() => { setSelectedModel(m.name); setSelectedModelId(m.id); setIsModelOpen(false); }}>
+                          {m.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <button 
+                    onClick={() => { setIsModeOpen(!isModeOpen); setIsModelOpen(false); }}
+                    className="flex items-center gap-1 text-[9px] font-mono font-bold tracking-tight text-[var(--solar-cyan)] hover:brightness-110 transition-all uppercase"
+                  >
+                    ∞ {mode} <ChevronDown size={8} />
+                  </button>
+                  {isModeOpen && (
+                    <div className="absolute bottom-full mb-2 left-0 bg-[#060e14] border border-[#1e3e4a] rounded-xl shadow-2xl p-1 flex flex-col min-w-[120px] text-[11px] z-[100]">
+                      {modes.map(m => (
+                        <button key={m} className={`px-3 py-1.5 text-left hover:bg-[#0a2d38] cursor-pointer rounded-lg flex items-center justify-between transition-colors ${mode === m ? 'text-[var(--solar-cyan)] bg-[#0a2d38]' : 'text-[var(--text-muted)]'}`} onClick={() => { setMode(m); setIsModeOpen(false); }}>
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
+            
             <div className="flex items-center gap-2">
-              <span className="text-[9px] text-[#2e5464] font-mono select-none">⏎ send · ⇧⏎ newline</span>
+              <span className="hidden sm:inline text-[9px] text-[#2e5464] font-mono select-none">⏎ send · ⇧⏎ newline</span>
               <button
                 onClick={handleSend}
                 disabled={!input.trim() || isLoading}

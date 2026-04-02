@@ -137,7 +137,18 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
   // When file switches, reset diff view
   useEffect(() => {
     setShowDiff(false);
+    
+    // IAM Monaco & File Stubs
+    const stubs = [
+      '/api/monaco/complete',
+      '/api/r2/file',
+      '/api/r2/upload',
+      '/api/agent/git/status',
+      '/api/agent/git/sync'
+    ];
+    stubs.forEach(url => console.log('TODO: wire', url));
   }, [fileData?.name]);
+
 
   const handleCopy = useCallback(() => {
     if (fileData?.content) {

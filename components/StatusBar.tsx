@@ -25,9 +25,18 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     col = 1,
     showCursor = false,
     activeTab = 'JavaScript',
-    version = SHELL_VERSION
+    version = SHELL_VERSION,
+    spendCount = '$0.00'
 }) => {
     const cursorText = showCursor ? `Ln ${line}, Col ${col}` : 'Ln --, Col --';
+    
+    // IAM Stubs: log future status endpoints
+    React.useEffect(() => {
+        ['/api/health', '/api/tunnel/status', '/api/agent/terminal/config-status', '/api/spend/summary'].forEach(url => {
+            console.log('TODO: wire', url);
+        });
+    }, []);
+
     return (
         <div className="h-6 bg-[var(--bg-app)] border-t border-[var(--border-subtle)]/30 w-full flex items-center justify-between text-[11px] font-mono text-[var(--text-main)]/90 shrink-0 z-[100] relative">
             {/* Left Box */}
@@ -65,6 +74,9 @@ export const StatusBar: React.FC<StatusBarProps> = ({
                 <div className="flex items-center hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] cursor-pointer px-2 h-full transition-colors text-[var(--text-main)] font-semibold flex-shrink-0">
                     {activeTab}
                 </div>
+                <div className="flex items-center hover:text-[var(--solar-yellow)] hover:bg-[var(--bg-hover)] cursor-pointer px-2 h-full transition-colors font-bold text-[10px] tracking-tight">
+                    {spendCount}
+                </div>
                 {version && (
                     <div className="hidden min-[1100px]:flex items-center px-2 h-full bg-[var(--solar-green)]/15 text-[var(--solar-green)] font-bold border-x border-[var(--border-subtle)]/20">
                         v{version}
@@ -80,6 +92,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
                     <Bell size={13} className="opacity-70" />
                 </div>
             </div>
+
         </div>
     );
 };
