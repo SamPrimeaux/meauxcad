@@ -27,7 +27,7 @@
   },
 
   "build": {
-    "command": "npm run build"
+    "command": ""
   },
 
   "r2_buckets": [
