@@ -3,7 +3,17 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { X, ExternalLink, ChevronDown, ChevronUp, Radio, Wifi, Plus, TriangleAlert, CircleCheck } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
-import { SHELL_VERSION } from '../src/shellVersion';
+
+/**
+ * IAM Branding Assets
+ */
+const IAM_LOGO = `
+\x1b[1;36m   ___                       ___        _   _       \x1b[0m
+\x1b[1;36m  |_ _|_ _ _ _  ___ _ _     / __| __ _ | |_| |      \x1b[0m
+\x1b[1;36m   | || ' \\ ' \\/ -_) '_|   | (__ / _\` ||  _| |__    \x1b[0m
+\x1b[1;36m  |___|_||_|_|_|\\___|_|     \\___|\\__,_| \\__|_|____| \x1b[0m
+\x1b[1;2m            S T U D I O   S A N D B O X            \x1b[0m
+`;
 
 export type ShellTab = 'terminal' | 'output' | 'problems';
 
@@ -15,73 +25,156 @@ export interface XTermShellHandle {
 
 interface XTermShellProps {
   onClose: () => void;
-  iamOrigin?: string;
   problems?: { file: string; line: number; msg: string; severity: 'error' | 'warning' }[];
   outputLines?: string[];
-  onOutputLine?: (line: string) => void;
-}
-
-function readCssVar(name: string): string {
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return v || '';
 }
 
 const MIN_HEIGHT = 140;
 const MAX_HEIGHT_RATIO = 0.75;
 const DEFAULT_HEIGHT = 280;
 
-async function execLine(line: string): Promise<{ stdout: string; stderr?: string }> {
-  const res = await fetch('/api/shell/exec', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ line }),
-  });
-  if (!res.ok) {
-    return { stdout: '', stderr: `HTTP ${res.status}` };
-  }
-  return (await res.json()) as { stdout: string; stderr?: string };
-}
-
 export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
-  ({ onClose, iamOrigin = 'https://inneranimalmedia.com', problems = [], outputLines = [], onOutputLine }, ref) => {
+  ({ onClose, problems = [], outputLines = [] }, ref) => {
     const terminalRef = useRef<HTMLDivElement>(null);
     const xtermRef = useRef<Terminal | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
-    const currentLineRef = useRef('');
-    const onOutputLineRef = useRef(onOutputLine);
-    onOutputLineRef.current = onOutputLine;
+    const socketRef = useRef<WebSocket | null>(null);
     const [height, setHeight] = useState(DEFAULT_HEIGHT);
     const [isCollapsed, setIsCollapsed] = useState(false);
-    const [activeTab, setActiveTabState] = useState<ShellTab>('terminal');
+    const [activeTab, setActiveTab] = useState<ShellTab>('terminal');
+    const [status, setStatus] = useState<'connecting' | 'online' | 'offline'>('connecting');
 
+    // ── WebSocket Connectivity ────────────────────────────────────────────────
+    useEffect(() => {
+      let isMounted = true;
+
+      const connect = async () => {
+        try {
+          const resp = await fetch('/api/agent/terminal/socket-url');
+          const { url } = await resp.json();
+          if (!isMounted || !url) return;
+
+          const ws = new WebSocket(url);
+          socketRef.current = ws;
+
+          ws.onopen = () => {
+            if (isMounted) setStatus('online');
+            
+            // Initial UI setup on first open
+            if (xtermRef.current) {
+              xtermRef.current.clear();
+              xtermRef.current.writeln(IAM_LOGO);
+              
+              // Key: Fetch startup greeting if possible
+              fetch('/api/agent/memory/list', { method: 'GET' })
+                 .then(r => r.json())
+                 .then(data => {
+                    const greeting = Array.isArray(data) ? data.find(m => m.key === 'STARTUP_GREETING')?.value : null;
+                    if (greeting && xtermRef.current) {
+                       xtermRef.current.writeln(`\r\n\x1b[1;36m>\x1b[0m ${greeting}\r\n`);
+                    } else {
+                       xtermRef.current.writeln('\r\n\x1b[2m  MeauxCAD Terminal — Connected to PTY sandbox\x1b[0m\r\n');
+                    }
+                    if (xtermRef.current) xtermRef.current.write('\x1b[1;32m$\x1b[0m ');
+                 })
+                 .catch(() => {
+                    if (xtermRef.current) {
+                       xtermRef.current.writeln('\r\n\x1b[2m  MeauxCAD Terminal — v1.2-sandbox active\x1b[0m\r\n');
+                       xtermRef.current.write('\x1b[1;32m$\x1b[0m ');
+                    }
+                 });
+            }
+          };
+
+          ws.onmessage = (event) => {
+            try {
+              const msg = JSON.parse(event.data);
+              if (msg.type === 'session_id') return; // consume handshake silently
+              if (msg.type === 'output') { 
+                if (xtermRef.current) xtermRef.current.write(msg.data); 
+                return; 
+              }
+            } catch (_) {}
+            // Handshake consuming/filtering for older JSON protocols
+            if (event.data && typeof event.data === 'string' && event.data.startsWith('{"type":"session_id"')) return;
+            
+            if (xtermRef.current) xtermRef.current.write(event.data);
+          };
+
+          ws.onclose = () => {
+            if (isMounted) setStatus('offline');
+            if (xtermRef.current) xtermRef.current.writeln('\r\n\x1b[1;31mConnection closed.\x1b[0m');
+          };
+
+          ws.onerror = () => {
+            if (isMounted) setStatus('offline');
+          };
+        } catch (e) {
+          if (isMounted) setStatus('offline');
+        }
+      };
+
+      if (!isCollapsed && activeTab === 'terminal') {
+        connect();
+      }
+
+      return () => {
+        isMounted = false;
+        if (socketRef.current) {
+          socketRef.current.close();
+          socketRef.current = null;
+        }
+      };
+    }, [isCollapsed, activeTab]);
+
+    // ── Theme Reactivity ───────────────────────────────────────────────────
+    useEffect(() => {
+      const observer = new MutationObserver(() => {
+        if (!xtermRef.current) return;
+        const styles = getComputedStyle(document.documentElement);
+        const bg = styles.getPropertyValue('--scene-bg').trim() || '#060e14';
+        const fg = styles.getPropertyValue('--text-main').trim() || '#839496';
+        const cyan = styles.getPropertyValue('--solar-cyan').trim() || '#2dd4bf';
+        const sel = styles.getPropertyValue('--bg-panel').trim() || '#0a2d38';
+
+        xtermRef.current.options.theme = {
+          ...xtermRef.current.options.theme,
+          background: bg,
+          foreground: fg,
+          cursor: cyan,
+          selectionBackground: sel,
+        };
+      });
+
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+      return () => observer.disconnect();
+    }, []);
+
+    // ── Expose methods via ref ───────────────────────────────────────────
     useImperativeHandle(ref, () => ({
       writeToTerminal: (text: string) => {
         if (!xtermRef.current) return;
         setIsCollapsed(false);
-        setActiveTabState('terminal');
-        xtermRef.current.writeln(`\x1b[2m${text}\x1b[0m`);
-        xtermRef.current.write('\x1b[1;32m$\x1b[0m ');
+        setActiveTab('terminal');
+        xtermRef.current.writeln(`\r\n\x1b[2m${text}\x1b[0m`);
       },
       runCommand: (cmd: string) => {
-        void (async () => {
-          if (!xtermRef.current) return;
-          setIsCollapsed(false);
-          setActiveTabState('terminal');
-          const term = xtermRef.current;
-          term.writeln(`\x1b[1;32m$\x1b[0m \x1b[1m${cmd}\x1b[0m`);
-          const { stdout, stderr } = await execLine(cmd);
-          if (stdout) term.writeln(stdout);
-          if (stderr && !stderr.includes('[clear]')) term.writeln(`\x1b[31m${stderr}\x1b[0m`);
-          onOutputLineRef.current?.(`$ ${cmd}\n${stdout || ''}${stderr ? '\n' + stderr : ''}`);
-          term.write('\x1b[1;32m$\x1b[0m ');
-        })();
+        if (!xtermRef.current) return;
+        setIsCollapsed(false);
+        setActiveTab('terminal');
+        if (socketRef.current?.readyState === WebSocket.OPEN) {
+          socketRef.current.send(cmd + '\r');
+        } else {
+          xtermRef.current.writeln(`\r\n\x1b[1;31mError: Terminal offline. Cannot run "${cmd}"\x1b[0m`);
+        }
       },
       setActiveTab: (t: ShellTab) => {
-        setActiveTabState(t);
+        setActiveTab(t);
         setIsCollapsed(false);
-      },
+      }
     }));
 
+    // ── Drag handle ─────────────────────────────────────────────────────────
     const handleDragStart = (e: React.MouseEvent) => {
       e.preventDefault();
       const startY = e.clientY;
@@ -101,20 +194,15 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
       document.addEventListener('mouseup', onUp);
     };
 
+    // ── Terminal Init ─────────────────────────────────────────────────────
     useEffect(() => {
-      if (!terminalRef.current || isCollapsed) return;
+      if (!terminalRef.current || isCollapsed || activeTab !== 'terminal') return;
 
-      const bg = readCssVar('--scene-bg') || readCssVar('--bg-app');
-      const fg = readCssVar('--text-main');
-      const cyan = readCssVar('--solar-cyan');
-      const sel = readCssVar('--bg-panel');
-      const red = readCssVar('--solar-red');
-      const green = readCssVar('--solar-green');
-      const yellow = readCssVar('--solar-yellow');
-      const blue = readCssVar('--solar-blue');
-      const magenta = readCssVar('--solar-magenta');
-      const base03 = readCssVar('--solar-base03');
-      const base01 = readCssVar('--solar-base01');
+      const styles = getComputedStyle(document.documentElement);
+      const bg = styles.getPropertyValue('--scene-bg').trim() || '#060e14';
+      const fg = styles.getPropertyValue('--text-main').trim() || '#839496';
+      const cyan = styles.getPropertyValue('--solar-cyan').trim() || '#2dd4bf';
+      const sel = styles.getPropertyValue('--bg-panel').trim() || '#0a2d38';
 
       const term = new Terminal({
         theme: {
@@ -122,30 +210,21 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
           foreground: fg,
           cursor: cyan,
           selectionBackground: sel,
-          black: base03,
-          brightBlack: base01,
-          red,
-          brightRed: readCssVar('--solar-orange'),
-          green,
-          brightGreen: readCssVar('--solar-base00'),
-          yellow,
-          brightYellow: base01,
-          blue,
-          brightBlue: fg,
-          magenta,
-          brightMagenta: readCssVar('--solar-violet'),
-          cyan,
-          brightCyan: readCssVar('--solar-base0'),
-          white: readCssVar('--solar-base1'),
-          brightWhite: readCssVar('--solar-base1'),
+          black: '#002b36', brightBlack: '#657b83',
+          red: '#dc322f', brightRed: '#cb4b16',
+          green: '#859900', brightGreen: '#586e75',
+          yellow: '#b58900', brightYellow: '#657b83',
+          blue: '#268bd2', brightBlue: '#839496',
+          magenta: '#d33682', brightMagenta: '#6c71c4',
+          cyan: '#2aa198', brightCyan: '#93a1a1',
+          white: '#eee8d5', brightWhite: '#fdf6e3',
         },
         fontFamily: '"JetBrains Mono", "Fira Code", Menlo, Monaco, "Courier New", monospace',
         fontSize: 13,
-        lineHeight: 1.5,
+        lineHeight: 1.4,
         cursorBlink: true,
         cursorStyle: 'block',
         allowTransparency: true,
-        letterSpacing: 0,
         scrollback: 5000,
       });
 
@@ -154,48 +233,9 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
       term.open(terminalRef.current);
       setTimeout(() => fitAddon.fit(), 50);
 
-      term.writeln('');
-      term.writeln(`\x1b[1;36m  IAM Lab shell\x1b[0m \x1b[2m— aitestsuite ${SHELL_VERSION} · type help\x1b[0m`);
-      term.writeln(`\x1b[2m  R2: r2 ls tools code/ | r2 cat tools <key> | writes under ${'aitestsuite/lab/'}\x1b[0m`);
-      term.writeln(`\x1b[2m  Real zsh: inneranimalmedia dashboard terminal (tunnel) or local repo\x1b[0m`);
-      term.writeln('');
-      term.write('\x1b[1;32m$\x1b[0m ');
-
-      term.onKey(({ key, domEvent }) => {
-        const printable = !domEvent.altKey && !domEvent.ctrlKey && !domEvent.metaKey;
-        if (domEvent.keyCode === 13) {
-          const cmd = currentLineRef.current.trim();
-          currentLineRef.current = '';
-          term.writeln('');
-          if (cmd) {
-            const low = cmd.toLowerCase();
-            if (low === 'clear' || low === 'cls') {
-              term.clear();
-              term.write('\x1b[1;32m$\x1b[0m ');
-              return;
-            }
-            void (async () => {
-              const { stdout, stderr } = await execLine(cmd);
-              if (stderr && stderr.includes('[clear]')) {
-                term.clear();
-              } else {
-                if (stdout) term.writeln(stdout);
-                if (stderr) term.writeln(`\x1b[31m${stderr}\x1b[0m`);
-              }
-              onOutputLineRef.current?.(`$ ${cmd}\n${stdout || ''}${stderr && !stderr.includes('[clear]') ? '\n' + stderr : ''}`);
-              term.write('\x1b[1;32m$\x1b[0m ');
-            })();
-          } else {
-            term.write('\x1b[1;32m$\x1b[0m ');
-          }
-        } else if (domEvent.keyCode === 8) {
-          if (currentLineRef.current.length > 0) {
-            currentLineRef.current = currentLineRef.current.slice(0, -1);
-            term.write('\b \b');
-          }
-        } else if (printable) {
-          currentLineRef.current += key;
-          term.write(key);
+      term.onData((data) => {
+        if (socketRef.current?.readyState === WebSocket.OPEN) {
+          socketRef.current.send(data);
         }
       });
 
@@ -203,159 +243,88 @@ export const XTermShell = forwardRef<XTermShellHandle, XTermShellProps>(
       fitAddonRef.current = fitAddon;
 
       const onResize = () => setTimeout(() => fitAddonRef.current?.fit(), 50);
-      const ro = new ResizeObserver(() => setTimeout(() => fitAddonRef.current?.fit(), 30));
-      if (terminalRef.current) ro.observe(terminalRef.current.parentElement ?? terminalRef.current);
       window.addEventListener('resize', onResize);
       return () => {
-        ro.disconnect();
         window.removeEventListener('resize', onResize);
         term.dispose();
-        xtermRef.current = null;
-        fitAddonRef.current = null;
       };
-    }, [isCollapsed]);
-
-    useEffect(() => {
-      setTimeout(() => fitAddonRef.current?.fit(), 80);
-    }, [height, activeTab]);
-
-    const tabs = ['terminal', 'output', 'problems'] as const;
-    const errCount = problems.filter((p) => p.severity === 'error').length;
-    const warnCount = problems.filter((p) => p.severity === 'warning').length;
+    }, [isCollapsed, activeTab]);
 
     return (
-      <div
-        className="flex flex-col flex-shrink-0 border-t border-[var(--border-subtle)] bg-[var(--bg-app)] z-50 select-none animate-slide-up origin-bottom min-h-0"
-        style={{ height: isCollapsed ? 36 : height }}
+      <div 
+        className={`fixed bottom-0 left-0 right-0 z-50 bg-[var(--bg-panel)] border-t border-[var(--border-main)] transition-transform duration-300 ease-in-out ${isCollapsed ? 'translate-y-[calc(100%-32px)]' : 'translate-y-0'}`}
+        style={{ height: isCollapsed ? '32px' : `${height}px` }}
       >
+        {/* Resize Handle */}
         {!isCollapsed && (
-          <div
-            className="w-full h-[5px] flex items-center justify-center cursor-row-resize shrink-0 group hover:bg-[var(--solar-cyan)]/30 transition-colors"
+          <div 
+            className="absolute top-0 left-0 right-0 h-1 cursor-ns-resize hover:bg-[var(--solar-cyan)] transition-colors z-50"
             onMouseDown={handleDragStart}
-          >
-            <div className="w-12 h-[2px] rounded-full bg-[var(--border-subtle)] group-hover:bg-[var(--solar-cyan)] transition-colors" />
-          </div>
+          />
         )}
 
-        <div className="h-9 flex items-center justify-between px-3 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] shrink-0">
-          <div className="flex items-center gap-0.5 h-full">
-            {tabs.map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => {
-                  setActiveTabState(t);
-                  setIsCollapsed(false);
-                }}
-                className={`h-full px-3 text-[11px] font-semibold uppercase tracking-widest transition-colors relative flex items-center gap-1.5 ${
-                  activeTab === t && !isCollapsed
-                    ? 'text-[var(--text-main)] border-b-2 border-[var(--solar-cyan)]'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
-                }`}
-              >
-                {t}
-                {t === 'problems' && errCount + warnCount > 0 && (
-                  <span
-                    className={`text-[9px] px-1 py-0.5 rounded font-bold ${errCount > 0 ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'}`}
-                  >
-                    {errCount > 0 ? errCount : warnCount}
-                  </span>
-                )}
-              </button>
-            ))}
-
-            <div className="w-px h-4 bg-[var(--border-subtle)] mx-1" />
-
-            <button type="button" className="p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition-colors" title="New Terminal">
-              <Plus size={13} />
-            </button>
+        {/* Toolbar */}
+        <div className="h-8 flex items-center justify-between px-3 bg-[var(--bg-panel)]/50 backdrop-blur-sm select-none">
+          <div className="flex items-center gap-4">
+            <div className="flex bg-[var(--bg-app)]/50 rounded p-0.5 overflow-hidden">
+               {(['terminal', 'output', 'problems'] as ShellTab[]).map(tab => (
+                 <button
+                   key={tab}
+                   onClick={() => setActiveTab(tab)}
+                   className={`px-3 py-1 text-[11px] font-medium transition-colors rounded-sm ${activeTab === tab ? 'bg-[var(--bg-panel)] text-[var(--solar-cyan)]' : 'text-[var(--text-dim)] hover:text-[var(--text-main)]'}`}
+                 >
+                   {tab.toUpperCase()}
+                 </button>
+               ))}
+            </div>
+            {status === 'connecting' && <span className="text-[10px] text-[var(--solar-yellow)] flex items-center gap-1.5"><Radio size={10} className="animate-pulse" /> Connecting...</span>}
+            {status === 'online' && <span className="text-[10px] text-[var(--solar-green)] flex items-center gap-1.5"><Wifi size={10} /> Online</span>}
+            {status === 'offline' && <span className="text-[10px] text-[var(--solar-red)] flex items-center gap-1.5"><TriangleAlert size={10} /> Offline</span>}
           </div>
 
-          <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
-            <a
-              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border border-[var(--border-subtle)] hover:text-[var(--solar-cyan)] hover:border-[var(--solar-cyan)]/50 transition-colors"
-              title="Prod dashboard terminal (session cookie + tunnel)"
-              href={`${iamOrigin}/dashboard/agent`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Radio size={11} />
-              IAM
-            </a>
-            <span
-              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest opacity-50 border border-[var(--border-subtle)]"
-              title="This panel uses Worker /api/shell/exec (not WS)"
-            >
-              <Wifi size={11} />
-              Lab
-            </span>
-
-            <div className="w-px h-4 bg-[var(--border-subtle)]" />
-
-            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-[var(--bg-hover)] text-[var(--text-muted)]">lab shell</span>
-
-            <a
-              className="p-1 rounded hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition-colors"
-              title="Open prod dashboard"
-              href={`${iamOrigin}/dashboard/agent`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <ExternalLink size={13} />
-            </a>
-
-            <button
-              type="button"
-              className="p-1 rounded hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition-colors"
-              title={isCollapsed ? 'Expand' : 'Collapse'}
+          <div className="flex items-center gap-2">
+            <button 
               onClick={() => setIsCollapsed(!isCollapsed)}
+              className="p-1 hover:bg-[var(--bg-app)] rounded transition-colors"
+              title={isCollapsed ? "Expand" : "Collapse"}
             >
-              {isCollapsed ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              {isCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </button>
-
-            <button type="button" className="p-1 rounded hover:text-white hover:bg-red-500/20 transition-colors" title="Close" onClick={onClose}>
-              <X size={13} />
+            <button 
+              onClick={onClose}
+              className="p-1 hover:bg-[var(--bg-app)] rounded transition-colors text-[var(--solar-red)]"
+              title="Close Terminal"
+            >
+              <X size={14} />
             </button>
           </div>
         </div>
 
+        {/* Content */}
         {!isCollapsed && (
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            <div className={`flex-1 min-h-0 overflow-hidden p-1 ${activeTab !== 'terminal' ? 'hidden' : ''}`} ref={terminalRef} />
-
+          <div className="flex-1 h-[calc(100%-32px)]">
+            {activeTab === 'terminal' && (
+              <div ref={terminalRef} className="h-full w-full p-2" />
+            )}
             {activeTab === 'output' && (
-              <div className="flex-1 min-h-0 overflow-y-auto p-3 font-mono text-[12px] leading-relaxed text-[var(--text-muted)] space-y-0.5 custom-scrollbar">
-                {outputLines.length === 0 ? (
-                  <p className="opacity-50 italic">No output yet. Commands appear here from the Lab shell.</p>
-                ) : (
-                  outputLines.map((line, i) => (
-                    <div key={i} className="whitespace-pre-wrap">
-                      {line}
-                    </div>
-                  ))
-                )}
+              <div className="h-full overflow-y-auto p-4 font-mono text-xs text-[var(--text-main)] bg-[var(--bg-app)]">
+                {outputLines.map((line, i) => <div key={i} className="mb-1">{line}</div>)}
               </div>
             )}
-
             {activeTab === 'problems' && (
-              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+              <div className="h-full overflow-y-auto p-4 space-y-2 bg-[var(--bg-app)]">
                 {problems.length === 0 ? (
-                  <div className="flex items-center gap-2 p-4 text-[12px] text-[var(--solar-green)]">
-                    <CircleCheck size={14} /> No problems detected.
+                  <div className="flex flex-col items-center justify-center h-full text-[var(--text-dim)] opacity-50">
+                    <CircleCheck size={32} className="mb-2" />
+                    <p className="text-xs">No problems found</p>
                   </div>
                 ) : (
                   problems.map((p, i) => (
-                    <div
-                      key={i}
-                      className={`flex items-start gap-3 px-4 py-2 border-b border-[var(--border-subtle)]/50 text-[12px] hover:bg-[var(--bg-hover)] transition-colors ${
-                        p.severity === 'error' ? 'text-red-400' : 'text-yellow-400'
-                      }`}
-                    >
-                      <TriangleAlert size={13} className="mt-0.5 shrink-0" />
+                    <div key={i} className="flex items-start gap-2 p-2 rounded bg-[var(--bg-panel)] border-l-2 border-[var(--solar-red)]">
+                      <TriangleAlert size={14} className="text-[var(--solar-red)] mt-0.5" />
                       <div>
-                        <span className="font-mono text-[var(--text-main)]">{p.file}</span>
-                        <span className="text-[var(--text-muted)] ml-1.5">:{p.line}</span>
-                        <span className="ml-3">{p.msg}</span>
+                        <div className="text-[11px] font-medium text-[var(--text-main)]">{p.msg}</div>
+                        <div className="text-[10px] text-[var(--text-dim)]">{p.file}:{p.line}</div>
                       </div>
                     </div>
                   ))

@@ -1,150 +1,117 @@
-# MeauxCAD Studio / AITestSuite
+# 🌌 MeauxCAD Studio: AI-First IDE Testbed
 
-Cloud-native, agent-first IDE shell for 3D and full-stack work. This repository is the **source of truth** for the dedicated **AITestSuite** Worker on Cloudflare. The GitHub project name remains **meauxcad**; the deployed Worker name is **aitestsuite**.
-
-**Live app:** [https://aitestsuite.meauxbility.workers.dev/](https://aitestsuite.meauxbility.workers.dev/)
-
-**Repository:** [https://github.com/SamPrimeaux/meauxcad](https://github.com/SamPrimeaux/meauxcad)
-
----
-
-## Role in the Inner Animal Media stack
-
-AITTestSuite is **Step 1** in the IAM delivery path: an independent sandbox for fast UI, Monaco, Excalidraw, in-IDE browser, and AI provider experiments. It does **not** replace the main CIDI sandbox.
-
-| Layer | Worker / surface | Purpose |
-|--------|------------------|---------|
-| **Lab (this repo)** | `aitestsuite` | Rapid iteration; own secrets; no production user traffic |
-| **CIDI sandbox** | `inneranimal-dashboard` | Full IAM mirror, `deploy-sandbox.sh`, benchmark gate |
-| **Production** | `inneranimalmedia` | Live product at inneranimalmedia.com |
-
-Approved patterns from this repo are **ported** into the [march1st-inneranimalmedia](https://github.com/SamPrimeaux/inneranimalmedia-agentsam-dashboard) monorepo, then deployed through sandbox benchmarks and promote-to-prod. See IAM docs in that repo: `docs/AITESTSUITE_IAM_STACK_INTEGRATION.md` (conceptual runbook).
+<div align="center">
+  <img width="1200" height="475" alt="MeauxCAD Banner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+  <p><i>The Cloud-Native, Agent-First IDE for 3D and Full-Stack Development.</i></p>
+</div>
 
 ---
 
-## Overview
+## 🚀 Overview
 
-MeauxCAD Studio is a desktop-style IDE built on the Cloudflare stack (Workers, D1, R2). It is meant as a shared workspace where an AI agent and a human developer stay in sync across code, 3D assets, terminal output, and previews.
-
-**Cloudflare Workers Builds** (optional): connect this repository to the `aitestsuite` Worker with branch `main`, build command `npm run build`, deploy `npx wrangler deploy`. Keep `wrangler.jsonc` `name` aligned with the Worker name (`aitestsuite`).
-
-### Versioning (shell `v` and cache `?v=`)
-
-- **Display version** (status bar, terminal banner, Worker JSON): `src/shellVersion.ts` exports `SHELL_VERSION`. Keep it in sync with **`package.json` `version`** (semver).
-- **Every deploy:** run `npm run deploy`, which runs `scripts/bump-cache.js` then `vite build` then `wrangler deploy`. The bump script sets `index.html` asset query strings to `?v=<semver>-<unix_ms>` so browsers always fetch fresh chunks after a version bump.
-- **D1 CIDI audit:** after a meaningful deploy, apply the matching migration in the IAM monorepo (`migrations/207_*` for AITestSuite) so `cidi_pipeline_runs` / `cidi_run_results` / `cidi_activity_log` / `cicd_runs` stay aligned (see `docs/CIDI_TABLES_AND_MIGRATIONS.md` there).
-- **Bottom status bar:** `src/ideWorkspace.ts` persists the active workspace (welcome pick vs native folder). Native **Open Folder** overrides a pinned choice. Branch label reads `localStorage` key `meauxcad_git_branch` (default `main`) until Settings wires Git. Monaco cursor line/column updates when the **Code** tab has a file open.
+MeauxCAD Studio is a high-performance, desktop-class IDE built entirely on the Cloudflare ecosystem (Workers, D1, R2). This repository serves as a **Multi-Model AI Testbed** to refine the "Synchronous Pair Programming" pattern between Human Developers and AI Agents (Gemini, Vertex, Cursor, OpenAI, Anthropic).
 
 ---
 
-## Features
+## 🏗 Shell Wireframe (Baseline for Refinement)
 
-### Monaco Editor
+As we transition into the production build, this ASCII mockup represents the current component hierarchy. Use this as your "visual spatial" guide for UI/UX refinement.
 
-- File System Access API for real read/write to a connected folder where the browser allows it.
-- Dirty-state indicators and discard flows.
-- Diff-style workflows for local vs buffered content.
-- Broad language support (TypeScript, Python, Rust, Go, SQL, and more).
-
-### Terminal and agent bridge
-
-- XTerm.js shell with a tabbed drawer (terminal, output, problems).
-- Agent-oriented flows for injecting commands and streaming output.
-
-### AI agent
-
-- Context from the active file and workspace where implemented.
-- Google Gemini integration (`@google/genai`); configure API keys via Worker secrets for deployed builds.
-- Artifacts and editor/terminal integration paths as built in the app.
-
-### 3D and preview
-
-- Voxel tooling and GLB viewing (Three.js / model-viewer where wired).
-- In-IDE browser tab for loading external sites without leaving the shell.
-
----
-
-## Tech stack
-
-| Area | Choice |
-|------|--------|
-| UI | React 19, Vite 6 |
-| Editor | Monaco (`@monaco-editor/react`) |
-| Drawing | Excalidraw (`@excalidraw/excalidraw`) |
-| Terminal | XTerm.js |
-| 3D | three.js, cannon-es, `@google/model-viewer` |
-| Edge | Cloudflare Workers (`worker.ts`), Wrangler 4 |
-| Data | D1 (`inneranimalmedia-business` in config), R2 buckets for CAD / assets (see `wrangler.jsonc`) |
-| Observability | Workers Logs / Traces; optional tail consumer to `inneranimalmedia-tail` |
-
-Secrets (set on the Worker, never commit): e.g. `GEMINI_API_KEY`, `OPENAI_API_KEY`, and others as required by your routes.
-
----
-
-## Prerequisites
-
-- Node.js 18+
-- npm
-- [Wrangler](https://developers.cloudflare.com/workers/wrangler/) (installed as a dev dependency; use `npx wrangler`)
-
----
-
-## Local development
-
-```bash
-git clone https://github.com/SamPrimeaux/meauxcad.git
-cd meauxcad
-npm install
+```text
++----------------------------------------------------------------------------------+
+|  [Logo]  [Project Search / Command Bar]                      [Agent] [Set] [Term] |
++----+-----------------------------------------------------------------------------+
+|    |                                                                             |
+| A  |  +-----------------------------------------------------------------------+   |
+| C  |  | [ Welcome ] [ Code: worker.ts ● ] [ Voxel ] [ Browser ] [ Draw ]      |   |
+| T  |  +-----------------------------------------------------------------------+   |
+| I  |  |                                                                       |   |
+| V  |  |                                                                       |   |
+| I  |  |                          MAIN WORKSPACE AREA                          |   |
+| T  |  |                                                                       |   |
+| Y  |  |               (Monaco / Three.js / Excalidraw / Iframe)               |   |
+|    |  |                                                                       |   |
+| B  |  |                                                                       |   |
+| A  |  |                                                                       |   |
+| R  |  |                                                                       |   |
++----+--+-----------------------------------------------------------------------+---|
+|    |  | [ Terminal ] [ Output ] [ Debug ]                                     |   |
+|    |  +-----------------------------------------------------------------------+   |
+|    |  | $ npm run build                                                       |   |
+|    |  | [####################] 100% Done                                     |   |
+|    |  |                                                                       |   |
++----+--+-----------------------------------------------------------------------+---+
+| [Status: Line 1, Col 1] [TS 5.0] [Cloud: Syncing] [Version 1.2.0]                 |
++-----------------------------------------------------------------------------------+
 ```
 
-Create `.env.local` (or use Wrangler secrets) for Gemini and any other provider keys your dev server expects.
+---
 
-```bash
-npm run dev
-```
+## 🛠 Component & Architectural Matrix
 
-Vite serves the frontend; API behavior that depends on the Worker should be tested with `wrangler dev` or a deployed preview as needed.
+### 1. The MeauxCAD Shell (`App.tsx`)
+The master orchestrator of states:
+- **`activeActivity`**: Toggles the dynamic-width sidebar (Files, MCPs, SQL, etc.).
+- **`activeTab`**: Manages the multi-view layer system (Code vs. 3D Engine vs. Browser).
+- **`isDirty`**: Visual "dirty" indicators (`●`) for unsaved edits.
+- **`Ghost Sync`**: Automatic background syncing of local state to R2/D1/Google Drive.
+
+### 2. The Agent Core (`ChatAssistant.tsx`)
+Designed as a **First-Class Citizen**:
+- **Context Awareness**: Receives `activeFileName` and `activeFileContent` in its system prompt.
+- **Terminal Bridging**: Executing commands via `XTermShell`.
+- **RAG Integration**: Utilizing Cloudflare D1 for persistent architectural memory.
+
+### 3. Integrated Tool-Chain
+- **Monaco Editor**: High-fidelity code editing with diff-view support.
+- **Voxel Engine**: Built-in 3D engine (Three.js) for spatial design.
+- **Excalidraw**: Whiteboard layer for architectural sketching.
+- **Browser Runtime**: In-IDE browser for testing web deployments.
+- **MCP (Model Context Protocol)**: Support for Chrome DevTools, Playwright, and custom agents tools.
 
 ---
 
-## Build and deploy
+## 🚦 Deployment & Staging Workflow
 
+This buildout uses a dual-repo architectural sync for rapid iteration.
+
+### 1. Shell Propagation (`meauxcad`)
+The frontend shell is hosted as a static asset within the R2 dashboard environment.
+- **Base Path**: `/static/dashboard/agent/`
+- **Promotion**: HTML and JS chunks are manually uploaded to the `agent-sam-sandbox-cicd` bucket.
+- **Protection**: R2 keys are restricted to authenticated IAM sessions.
+
+### 2. Backend Synchronization (`agentsam-dashboard`)
+Core routing and AI logic updates follow a specific branch-based workflow:
+- **Repository**: `SamPrimeaux/inneranimalmedia-agentsam-dashboard`
+- **Branch**: `agentsam-clean`
+- **Path**: `source/worker.js`
+- **Workflow**: Local `worker.js` edits are pushed to the `agentsam-clean` branch for staging before promotion to production.
+
+### Local Build Command
 ```bash
 npm run build
+# Assets uploaded manually to R2 static/dashboard/agent/assets/
 ```
 
-Production deploy (bumps cache script, builds, deploys Worker + assets):
-
-```bash
-npm run deploy
-```
-
-Ensure `wrangler.jsonc` `name` matches the Cloudflare Worker (**aitestsuite**). For CI/CD via Cloudflare Git integration, the same commands should match your dashboard: **Build:** `npm run build`, **Deploy:** `npx wrangler deploy`.
-
----
-
-## Project layout
-
-| Path | Role |
-|------|------|
-| `App.tsx` | IDE shell orchestration |
-| `worker.ts` | Worker routes, API, persistence |
-| `components/` | Monaco, terminal, chat, and feature UI |
-| `services/` | API and integration helpers |
-| `utils/` | FS helpers and shared utilities |
-| `scripts/` | Deploy helpers (e.g. cache bump) |
-| `wrangler.jsonc` | Worker name, bindings, D1, R2, DO, assets |
+### Prompting Strategy (Environment Bindings)
+When instructing future agents, use the following placeholder syntax:
+- `[TERMINAL_WS_URL]`: Secure WebSocket endpoint for PTY integration.
+- `[STARTUP_GREETING]`: Key for DB-driven terminal welcome message.
+- `[DASHBOARD_R2]`: Primary bucket for CAD assets and IDE exports.
+- `[INTERNAL_API_SECRET]`: Auth token for worker-to-worker communication.
 
 ---
 
-## Contributing
+## 💎 Project Structure
 
-Issues and PRs are welcome for bug fixes, features, and documentation. For changes that must ship on **inneranimalmedia.com**, coordinate with the main IAM monorepo workflow (sandbox first, then production promote).
+- `/components`: UI units (MonacoEditorView, XTermShell, ChatAssistant).
+- `/src`: Core logic, including Durable Object sessions (`MeauxCADSession.ts`).
+- `worker.ts`: API routing, AI model management, and DB persistence.
+- `wrangler.jsonc`: Cloudflare configuration baseline.
 
 ---
 
-## License and credits
-
-Built by Sam Primeaux. Inner Animal Media / IAM platform integration is documented in the primary monorepo.
-
-**Historical note:** The public Workers.dev hostname was updated to **aitestsuite**; older references to `meauxcad.meauxbility.workers.dev` or deprecated `aitesting` hosts should be treated as superseded by [aitestsuite.meauxbility.workers.dev](https://aitestsuite.meauxbility.workers.dev/).
+<div align="center">
+  <sub>Built for Multi-Model AI End-to-End Testing & IDE Evolution.</sub>
+</div>
